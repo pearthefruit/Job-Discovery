@@ -268,6 +268,16 @@
             </div>
         </div>
 
+        <!-- Ignored Bucket (collapsed by default) -->
+        <div class="kanban-ignored-bucket kanban-column" data-status="ignored" id="kanban-ignored-bucket" style="display:none;">
+            <div class="kanban-ignored-header" onclick="toggleIgnoredBucket()">
+                <span class="kanban-ignored-chevron" id="ignored-chevron">&#x25B6;</span>
+                <h3>Ignored</h3>
+                <span class="badge-count" id="kanban-count-ignored">0</span>
+            </div>
+            <div class="kanban-ignored-cards" id="kanban-ignored" style="display:none;"></div>
+        </div>
+
     </main>
 
     <!-- =================== TOOLKIT TAB =================== -->
@@ -410,7 +420,7 @@
                         <option value="rejected">Rejected</option>
                         <option value="ignored">Ignored</option>
                     </select>
-                    <button id="btn-toggle-jd" class="btn btn-sm jd-toggle-btn" onclick="toggleJDPanel()">Show JD</button>
+                    <button id="btn-share-jd" class="btn btn-sm" onclick="shareJDLink()">Share JD</button>
                     <button id="btn-apply-open" class="btn btn-success btn-sm" onclick="handleApply()">Apply</button>
                     <button class="btn btn-ghost btn-sm" onclick="collapseJobView()" title="Close">&times; Close</button>
                 </div>
@@ -424,13 +434,15 @@
                 <button class="phase-btn" data-phase="interview" onclick="switchJobPhase('interview')">
                     Interview Prep
                 </button>
-                <button class="phase-btn" data-phase="notes" onclick="switchJobPhase('notes')">
-                    Notes & Log
-                </button>
             </div>
 
             <!-- Content area: JD panel + phase views side by side -->
             <div class="expanded-content-row">
+                <!-- JD edge handle — left side -->
+                <div id="jd-edge-handle" class="jd-edge-handle" onclick="toggleJDPanel()" title="Show Job Description">
+                    <div class="jd-edge-chevron">&#x25C0;</div>
+                    <div class="jd-edge-label">Show JD</div>
+                </div>
                 <!-- JD Side Panel -->
                 <div id="jd-panel" class="jd-panel" style="display:none;">
                     <div class="jd-panel-header">
@@ -473,10 +485,11 @@
                             </div>
                         </div>
                     </div>
-                    <div class="two-panel">
+                    <div class="two-panel" id="resume-two-panel">
                         <div id="resume-display" class="panel-left">
                             <div id="resume-sections-container"></div>
                         </div>
+                        <div class="resize-handle-vertical" data-resize="resume"></div>
                         <div id="ai-feedback-panel" class="panel-right">
                             <div class="empty-state">Click Analyze to get AI feedback.</div>
                         </div>
@@ -528,6 +541,17 @@
                                 </div>
                             </div>
 
+                            <!-- Live Notes (during the interview) -->
+                            <div class="stage-section" id="section-live-notes" style="display:none;">
+                                <div class="section-header-row">
+                                    <h3 class="stage-section-title">Live Notes</h3>
+                                </div>
+                                <div class="quill-resize-wrapper" id="live-notes-resize">
+                                    <div id="live-notes-editor"></div>
+                                    <div class="resize-handle" data-target="live-notes-resize"></div>
+                                </div>
+                            </div>
+
                             <!-- Interviewer Intel -->
                             <div class="stage-section collapsible-section" id="section-interviewer">
                                 <div class="section-header-row section-toggle" onclick="toggleSection('interviewer')">
@@ -561,6 +585,20 @@
                                 </div>
                             </div>
 
+                            <!-- Whiteboard -->
+                            <div class="stage-section collapsible-section" id="section-whiteboard">
+                                <div class="section-header-row section-toggle" onclick="toggleSection('whiteboard')">
+                                    <h3 class="stage-section-title"><span class="section-chevron" id="chevron-whiteboard">&#x25B6;</span> Whiteboard</h3>
+                                    <button class="btn btn-ghost btn-sm" onclick="event.stopPropagation();toggleWhiteboardFullscreen()" title="Fullscreen">&#x26F6;</button>
+                                </div>
+                                <div class="section-collapsible" id="body-whiteboard" style="display:none;">
+                                    <div class="whiteboard-container" id="stage-whiteboard-container">
+                                        <iframe id="stage-whiteboard-iframe" class="whiteboard-iframe" src="/static/excalidraw.html" loading="lazy"></iframe>
+                                        <button class="whiteboard-fullscreen-exit" onclick="event.stopPropagation();toggleWhiteboardFullscreen()">&#x2715; Exit Fullscreen</button>
+                                    </div>
+                                </div>
+                            </div>
+
                             <!-- Assigned Stories -->
                             <div class="stage-section collapsible-section" id="section-stories">
                                 <div class="section-header-row section-toggle" onclick="toggleSection('stories')">
@@ -578,6 +616,11 @@
                                         <div class="empty-state">No stories assigned. Click "+ Add Story" to get started.</div>
                                     </div>
                                 </div>
+                            </div>
+
+                            <!-- Status transition hint -->
+                            <div id="stage-status-hint" class="stage-status-hint" style="display:none;" onclick="advanceStageStatus()">
+                                <span id="stage-status-hint-text"></span>
                             </div>
 
                             <!-- Post-Interview Debrief (shown when status = completed) -->
@@ -626,9 +669,23 @@
                                     </div>
                                 </div>
                             </div>
+
+                            <!-- Mock Interviews (practice sessions) -->
+                            <div class="stage-section collapsible-section" id="section-mocks">
+                                <div class="section-header-row section-toggle" onclick="toggleSection('mocks')">
+                                    <h3 class="stage-section-title"><span class="section-chevron" id="chevron-mocks">&#x25B6;</span> Mock Interviews</h3>
+                                    <button class="btn btn-ghost btn-sm" onclick="event.stopPropagation();addMockInterview()" title="Add mock session">+ Add</button>
+                                </div>
+                                <div class="section-collapsible" id="body-mocks" style="display:none;">
+                                    <div id="mock-interviews-list" class="mock-interviews-list">
+                                        <div class="empty-state">No mock sessions yet. Click + Add to practice.</div>
+                                    </div>
+                                </div>
+                            </div>
                         </div>
                     </div>
 
+                    <div class="resize-handle-vertical" data-resize="interview"></div>
                     <!-- Right: AI Prep Coach -->
                     <div class="interview-coach-panel">
                         <h2>AI Prep Coach</h2>
@@ -708,27 +765,29 @@
                 </div>
             </div>
 
-            <!-- Notes Phase (hidden by default) -->
-            <div id="expanded-notes-view" class="expanded-body" style="display:none;">
-                <div class="card">
-                    <h2>Activity Log</h2>
-                    <div class="activity-add-form">
-                        <select id="activity-type-select" class="input input-inline" style="flex:0 0 auto;width:auto;">
-                            <option value="note">Note</option>
-                            <option value="call">Phone Call</option>
-                            <option value="email">Email</option>
-                            <option value="interview">Interview</option>
-                            <option value="update">Status Update</option>
-                        </select>
-                        <input type="text" id="activity-text-input" class="input" placeholder="What happened? (e.g. 'Recruiter reached out via LinkedIn')" onkeydown="if(event.key==='Enter')handleAddActivityEntry()">
-                        <button class="btn btn-primary btn-sm" onclick="handleAddActivityEntry()">Add</button>
-                    </div>
-                    <div id="activity-timeline" class="activity-timeline">
-                        <div class="empty-state">No activity logged yet.</div>
-                    </div>
+            </div><!-- /expanded-content-row -->
+        </div>
+
+        <!-- Activity Sidebar (outside container, slides out to the right) -->
+        <div id="activity-sidebar" class="activity-sidebar">
+            <!-- Edge handle — sticks out left of sidebar -->
+            <div id="sidebar-pull-tab" class="sidebar-edge-handle" onclick="handleEdgeHandleClick(event)" title="Activity Log">
+                <div class="edge-label">Activity</div>
+                <div class="edge-chevron">&#x25B6;</div>
+            </div>
+            <!-- Inner content wrapper (clipped) -->
+            <div class="sidebar-inner">
+                <div class="sidebar-header">
+                    <span class="sidebar-title">Activity Log</span>
+                    <button class="btn btn-ghost btn-sm" onclick="toggleActivitySidebar()" title="Close">&times;</button>
+                </div>
+                <div class="sidebar-input-area">
+                    <input type="text" id="sidebar-activity-input" class="input" placeholder="Jot a thought..." onkeydown="if(event.key==='Enter')handleSidebarAddEntry()">
+                </div>
+                <div id="sidebar-timeline" class="sidebar-timeline">
+                    <div class="empty-state">No thoughts yet.</div>
                 </div>
             </div>
-            </div><!-- /expanded-content-row -->
         </div>
     </div>
 

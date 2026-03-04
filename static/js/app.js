@@ -439,6 +439,26 @@ const api = {
             body: JSON.stringify({ story_ids: storyIds })
         }).then(r => r.json());
     },
+    async getMocks(jobId, stageId) {
+        return fetch(`/api/interview-stages/${jobId}/${stageId}/mocks`).then(r => r.json());
+    },
+    async addMock(jobId, stageId, title) {
+        return fetch(`/api/interview-stages/${jobId}/${stageId}/mocks`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ title })
+        }).then(r => r.json());
+    },
+    async updateMock(jobId, stageId, mockId, data) {
+        return fetch(`/api/interview-stages/${jobId}/${stageId}/mocks/${mockId}`, {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(data)
+        }).then(r => r.json());
+    },
+    async deleteMock(jobId, stageId, mockId) {
+        return fetch(`/api/interview-stages/${jobId}/${stageId}/mocks/${mockId}`, { method: 'DELETE' }).then(r => r.json());
+    },
 };
 
 // =================== Tab Navigation ===================
@@ -1371,7 +1391,19 @@ async function expandJobView(jobId) {
     });
     document.getElementById('expanded-resume-view').style.display = 'block';
     document.getElementById('expanded-interview-view').style.display = 'none';
-    document.getElementById('expanded-notes-view').style.display = 'none';
+
+    // Reset activity sidebar
+    _sidebarOpen = false;
+    const sidebar = document.getElementById('activity-sidebar');
+    sidebar.classList.remove('open');
+    sidebar.style.width = '';
+    sidebar.style.minWidth = '';
+    const actPullTab = document.getElementById('sidebar-pull-tab');
+    if (actPullTab) {
+        actPullTab.classList.remove('open');
+        const lbl = actPullTab.querySelector('.edge-label');
+        if (lbl) lbl.textContent = 'Activity';
+    }
 
     // Load resume phase
     await loadExpandedResumePhase(jobId);
@@ -1396,8 +1428,12 @@ function collapseJobView() {
     const jdHandle = document.getElementById('jd-resize-handle');
     if (jdHandle) jdHandle.style.display = 'none';
     document.querySelector('.expanded-container')?.classList.remove('jd-visible');
-    const jdBtn = document.getElementById('btn-toggle-jd');
-    if (jdBtn) { jdBtn.classList.remove('active'); jdBtn.textContent = 'Show JD'; }
+    const jdEdge = document.getElementById('jd-edge-handle');
+    if (jdEdge) {
+        jdEdge.classList.remove('open');
+        const lbl = jdEdge.querySelector('.jd-edge-label');
+        if (lbl) lbl.textContent = 'Show JD';
+    }
 
     // Animate out
     const overlay = document.getElementById('job-expanded-overlay');
@@ -1478,7 +1514,6 @@ async function switchJobPhase(phase) {
     // Hide all phase views
     document.getElementById('expanded-resume-view').style.display = 'none';
     document.getElementById('expanded-interview-view').style.display = 'none';
-    document.getElementById('expanded-notes-view').style.display = 'none';
 
     if (phase === 'resume') {
         document.getElementById('expanded-resume-view').style.display = 'block';
@@ -1486,25 +1521,24 @@ async function switchJobPhase(phase) {
     } else if (phase === 'interview') {
         document.getElementById('expanded-interview-view').style.display = 'block';
         await loadExpandedInterviewPhase(expandedJobId);
-    } else if (phase === 'notes') {
-        document.getElementById('expanded-notes-view').style.display = 'block';
-        await loadExpandedNotesPhase(expandedJobId);
     }
 }
 
 async function toggleJDPanel() {
     _jdPanelVisible = !_jdPanelVisible;
     const container = document.querySelector('.expanded-container');
-    const btn = document.getElementById('btn-toggle-jd');
     const panel = document.getElementById('jd-panel');
-
     const resizeHandle = document.getElementById('jd-resize-handle');
+    const edgeHandle = document.getElementById('jd-edge-handle');
+
+    const edgeLabel = edgeHandle && edgeHandle.querySelector('.jd-edge-label');
 
     if (_jdPanelVisible) {
         container.classList.add('jd-visible');
-        if (btn) { btn.classList.add('active'); btn.textContent = 'Hide JD'; }
         panel.style.display = '';
         if (resizeHandle) resizeHandle.style.display = '';
+        if (edgeHandle) edgeHandle.classList.add('open');
+        if (edgeLabel) edgeLabel.textContent = 'Hide JD';
 
         // Fetch and render JD
         const jdContent = document.getElementById('jd-panel-content');
@@ -1518,13 +1552,10 @@ async function toggleJDPanel() {
                 if (!desc) {
                     _jdCache[expandedJobId] = '<div class="empty-state">No job description available.</div>';
                 } else if (desc.trim().startsWith('<')) {
-                    // HTML content — render directly
                     _jdCache[expandedJobId] = desc;
                 } else if (desc.includes('# ') || desc.includes('**') || desc.includes('- ')) {
-                    // Markdown — parse with marked
                     _jdCache[expandedJobId] = marked.parse(desc);
                 } else {
-                    // Plain text — wrap in paragraphs
                     _jdCache[expandedJobId] = desc.split('\n\n').map(p => `<p>${escapeHtml(p)}</p>`).join('');
                 }
                 jdContent.innerHTML = _jdCache[expandedJobId];
@@ -1532,9 +1563,24 @@ async function toggleJDPanel() {
         }
     } else {
         container.classList.remove('jd-visible');
-        if (btn) { btn.classList.remove('active'); btn.textContent = 'Show JD'; }
         panel.style.display = 'none';
         if (resizeHandle) resizeHandle.style.display = 'none';
+        if (edgeHandle) edgeHandle.classList.remove('open');
+        if (edgeLabel) edgeLabel.textContent = 'Show JD';
+    }
+}
+
+async function shareJDLink() {
+    const url = expandedJobData && expandedJobData.job_url;
+    if (!url) {
+        showToast('No job URL available for this listing', 'error');
+        return;
+    }
+    try {
+        await navigator.clipboard.writeText(url);
+        showToast('Job link copied to clipboard', 'success');
+    } catch (e) {
+        showToast('Failed to copy job link', 'error');
     }
 }
 
@@ -2131,7 +2177,7 @@ function parseBulletAnalysis(markdown) {
     if (!markdown) return [];
     const improvements = [];
 
-    const parts = markdown.split(/\*\*Bullet\s+\d+[:\s]*\*\*/i);
+    const parts = markdown.split(/\*\*Bullet\s+\d+[^*]*\*\*/i);
 
     for (let i = 1; i < parts.length; i++) {
         const block = parts[i];
@@ -2404,6 +2450,7 @@ function applyBoardFilters() {
     const interviewing = filtered.filter(j => j.status === 'interviewing');
     const offers = filtered.filter(j => j.status === 'offer');
     const rejected = filtered.filter(j => j.status === 'rejected');
+    const ignored = filtered.filter(j => j.status === 'ignored');
 
     // Update board stats
     document.getElementById('board-stat-new').textContent = newJobs.length;
@@ -2429,6 +2476,9 @@ function applyBoardFilters() {
         renderKanbanColumn('kanban-offer', 'kanban-count-offer', offers);
         renderKanbanColumn('kanban-rejected', 'kanban-count-rejected', rejected);
     }
+
+    // Render ignored bucket
+    renderIgnoredBucket(ignored, groupBy);
 }
 
 function renderKanbanColumnGrouped(containerId, countId, jobs) {
@@ -2547,6 +2597,7 @@ function setupKanbanDragDrop(container) {
             'interviewing': 'interviewing',
             'offer': 'offer',
             'rejected': 'rejected',
+            'ignored': 'ignored',
         };
         const newStatus = statusMap[targetStatus];
         if (!newStatus) return;
@@ -2567,6 +2618,27 @@ async function dismissKanbanCard(jobId) {
     await api.updateJobStatus(jobId, 'ignored');
     showToast('Job ignored', 'success');
     setTimeout(() => refreshBoard(), 200);
+}
+
+function renderIgnoredBucket(jobs, groupBy) {
+    const bucket = document.getElementById('kanban-ignored-bucket');
+    const countEl = document.getElementById('kanban-count-ignored');
+    countEl.textContent = jobs.length;
+    bucket.style.display = jobs.length > 0 ? '' : 'none';
+
+    if (groupBy) {
+        renderKanbanColumnGrouped('kanban-ignored', 'kanban-count-ignored', jobs);
+    } else {
+        renderKanbanColumn('kanban-ignored', 'kanban-count-ignored', jobs);
+    }
+}
+
+function toggleIgnoredBucket() {
+    const cards = document.getElementById('kanban-ignored');
+    const chevron = document.getElementById('ignored-chevron');
+    const isOpen = cards.style.display !== 'none';
+    cards.style.display = isOpen ? 'none' : '';
+    chevron.innerHTML = isOpen ? '&#x25B6;' : '&#x25BC;';
 }
 
 // =================== Stories ===================
@@ -3420,45 +3492,75 @@ async function handleDeleteResume(id) {
     renderResumeBank(resumes);
 }
 
-// =================== Notes / Activity Log ===================
+// =================== Activity Sidebar ===================
 
-async function loadExpandedNotesPhase(jobId) {
-    const timeline = document.getElementById('activity-timeline');
-    timeline.innerHTML = '<div class="empty-state">Loading...</div>';
+let _sidebarOpen = false;
 
-    try {
-        const data = await api.getActivityLog(jobId);
-        renderActivityTimeline(data.entries || []);
-    } catch (e) {
-        timeline.innerHTML = '<div class="error-state">Failed to load activity log.</div>';
+function toggleActivitySidebar() {
+    const sidebar = document.getElementById('activity-sidebar');
+    const pullTab = document.getElementById('sidebar-pull-tab');
+    _sidebarOpen = !_sidebarOpen;
+    sidebar.classList.toggle('open', _sidebarOpen);
+    if (pullTab) {
+        pullTab.classList.toggle('open', _sidebarOpen);
+        const edgeLabel = pullTab.querySelector('.edge-label');
+        if (edgeLabel) edgeLabel.textContent = _sidebarOpen ? 'Hide' : 'Activity';
+    }
+    // Reset inline resize styles when closing
+    if (!_sidebarOpen) {
+        sidebar.style.width = '';
+        sidebar.style.minWidth = '';
+    }
+    if (_sidebarOpen && expandedJobId) {
+        loadSidebarActivity(expandedJobId);
     }
 }
 
-function renderActivityTimeline(entries) {
-    const timeline = document.getElementById('activity-timeline');
+// Click toggles sidebar; but if sidebar is open and user drags, it resizes instead
+let _edgeMouseDownX = null;
+function handleEdgeHandleClick(e) {
+    // If sidebar is open, only toggle on pure click (no drag)
+    if (_sidebarOpen) {
+        // The resize handler in initResizeHandles manages drag.
+        // Only toggle if this was a clean click (mousedown + mouseup with <5px movement)
+        // We track this via a flag set in mousedown
+        if (!_edgeDragged) toggleActivitySidebar();
+    } else {
+        toggleActivitySidebar();
+    }
+    _edgeDragged = false;
+}
+let _edgeDragged = false;
+
+async function loadSidebarActivity(jobId) {
+    const timeline = document.getElementById('sidebar-timeline');
+    timeline.innerHTML = '<div class="empty-state">Loading...</div>';
+    try {
+        const data = await api.getActivityLog(jobId);
+        renderSidebarTimeline(data.entries || []);
+    } catch (e) {
+        timeline.innerHTML = '<div class="empty-state">Failed to load.</div>';
+    }
+}
+
+function renderSidebarTimeline(entries) {
+    const timeline = document.getElementById('sidebar-timeline');
     if (!entries.length) {
-        timeline.innerHTML = '<div class="empty-state">No activity logged yet. Add notes about recruiter calls, interviews, and updates.</div>';
+        timeline.innerHTML = '<div class="empty-state">No thoughts yet. Jot something down.</div>';
         return;
     }
-
-    const typeIcons = { note: 'N', call: 'C', email: 'E', interview: 'I', update: 'U' };
-    const typeLabels = { note: 'Note', call: 'Phone Call', email: 'Email', interview: 'Interview', update: 'Update' };
-
-    // Show newest first
+    // Newest first
     const sorted = [...entries].reverse();
-
     timeline.innerHTML = sorted.map(entry => {
-        const icon = typeIcons[entry.type] || 'N';
-        const label = typeLabels[entry.type] || entry.type;
         const timeStr = entry.ts ? formatRelativeTime(entry.ts) : '';
         const dateStr = entry.ts ? new Date(entry.ts).toLocaleString() : '';
-
+        const len = (entry.text || '').length;
+        const sizeClass = len <= 30 ? 'bubble-sm' : len <= 100 ? 'bubble-md' : 'bubble-lg';
         return `
-            <div class="activity-entry">
-                <div class="entry-icon type-${entry.type || 'note'}">${icon}</div>
-                <div class="entry-body">
-                    <p class="entry-text">${escapeHtml(entry.text)}</p>
-                    <div class="entry-meta">${label} &middot; ${timeStr}${dateStr ? ` &middot; ${dateStr}` : ''}</div>
+            <div class="timeline-entry">
+                <div class="timeline-bubble ${sizeClass}">
+                    ${escapeHtml(entry.text)}
+                    <div class="bubble-time" title="${dateStr}">${timeStr}</div>
                 </div>
             </div>
         `;
@@ -3480,21 +3582,15 @@ function formatRelativeTime(isoString) {
     return `${Math.floor(diffDay / 30)}mo ago`;
 }
 
-async function handleAddActivityEntry() {
+async function handleSidebarAddEntry() {
     if (!expandedJobId) return;
-
-    const textInput = document.getElementById('activity-text-input');
-    const typeSelect = document.getElementById('activity-type-select');
-    const text = textInput.value.trim();
+    const input = document.getElementById('sidebar-activity-input');
+    const text = input.value.trim();
     if (!text) return;
-
-    const type = typeSelect.value;
-
     try {
-        await api.addActivityEntry(expandedJobId, text, type);
-        textInput.value = '';
-        showToast('Entry added', 'success');
-        await loadExpandedNotesPhase(expandedJobId);
+        await api.addActivityEntry(expandedJobId, text, 'note');
+        input.value = '';
+        await loadSidebarActivity(expandedJobId);
     } catch (e) {
         showToast('Failed to add entry', 'error');
     }
@@ -3508,9 +3604,11 @@ let _stageStoriesCache = [];
 let _versionsCache = [];
 let _insightsCache = [];
 let _stageNotesSaveTimer = null;
+let _liveNotesSaveTimer = null;
 
 // Quill editor instances
 let _quillGamePlan = null;
+let _quillLiveNotes = null;
 let _quillDebriefWentWell = null;
 let _quillDebriefToImprove = null;
 let _quillDebriefQuestionsAsked = null;
@@ -3847,6 +3945,16 @@ async function selectStage(stageId) {
         _quillGamePlan.root.innerHTML = html;
     }
 
+    // Initialize Live Notes Quill editor
+    _quillLiveNotes = initQuill('live-notes-editor', QUILL_FULL_TOOLBAR, 'Jot notes during the interview... (auto-saves)', () => {
+        clearTimeout(_liveNotesSaveTimer);
+        _liveNotesSaveTimer = setTimeout(() => saveLiveNotes(), 800);
+    });
+    if (_quillLiveNotes && stage.live_notes) {
+        const html = contentToHtml(stage.live_notes);
+        _quillLiveNotes.root.innerHTML = html;
+    }
+
     // Init resize handles
     initResizeHandles();
 
@@ -3860,6 +3968,13 @@ async function selectStage(stageId) {
 
     // Show/hide "Copy from Stage" button
     updateCopyFromStageVisibility();
+
+    // Load whiteboard + mock interviews
+    initStageWhiteboard(stage);
+    loadMockInterviews(stageId);
+
+    // Update section visibility based on status
+    updateStageSectionVisibility(stage.status || 'upcoming');
 }
 
 // ---- Stage CRUD Handlers ----
@@ -3908,12 +4023,46 @@ async function handleStageStatusChange() {
         const stage = _stagesCache.find(s => s.id === _selectedStageId);
         if (stage) stage.status = status;
         renderTimeline();
-        // Show/hide debrief section
-        const debriefSection = document.getElementById('section-debrief');
-        if (debriefSection) debriefSection.style.display = status === 'completed' ? '' : 'none';
+        updateStageSectionVisibility(status);
     } catch (e) {
         showToast('Failed to update status', 'error');
     }
+}
+
+function updateStageSectionVisibility(status) {
+    const liveNotes = document.getElementById('section-live-notes');
+    const debrief = document.getElementById('section-debrief');
+    const hint = document.getElementById('stage-status-hint');
+    const hintText = document.getElementById('stage-status-hint-text');
+
+    // Live Notes: visible when current or completed
+    if (liveNotes) liveNotes.style.display = (status === 'current' || status === 'completed') ? '' : 'none';
+
+    // Debrief: visible only when completed
+    if (debrief) debrief.style.display = status === 'completed' ? '' : 'none';
+
+    // Status hint banner
+    if (hint && hintText) {
+        if (status === 'upcoming') {
+            hint.style.display = '';
+            hintText.textContent = 'Set status to "Current" when the interview starts to begin taking Live Notes.';
+        } else if (status === 'current') {
+            hint.style.display = '';
+            hintText.textContent = 'Set status to "Completed" when you\'re done to write your Debrief.';
+        } else {
+            hint.style.display = 'none';
+        }
+    }
+}
+
+async function advanceStageStatus() {
+    const select = document.getElementById('stage-status-select');
+    if (!select) return;
+    const current = select.value;
+    const next = current === 'upcoming' ? 'current' : current === 'current' ? 'completed' : null;
+    if (!next) return;
+    select.value = next;
+    await handleStageStatusChange();
 }
 
 async function saveStageNotes() {
@@ -3925,6 +4074,19 @@ async function saveStageNotes() {
         await api.updateStage(expandedJobId, _selectedStageId, { notes: cleanNotes });
         const stage = _stagesCache.find(s => s.id === _selectedStageId);
         if (stage) stage.notes = cleanNotes;
+    } catch (e) {
+        // Silent fail for auto-save
+    }
+}
+
+async function saveLiveNotes() {
+    if (!_selectedStageId || !expandedJobId || !_quillLiveNotes) return;
+    const notes = _quillLiveNotes.root.innerHTML;
+    const cleanNotes = (notes === '<p><br></p>' || notes === '<p></p>') ? '' : notes;
+    try {
+        await api.updateStage(expandedJobId, _selectedStageId, { live_notes: cleanNotes });
+        const stage = _stagesCache.find(s => s.id === _selectedStageId);
+        if (stage) stage.live_notes = cleanNotes;
     } catch (e) {
         // Silent fail for auto-save
     }
@@ -4459,7 +4621,7 @@ async function handlePromoteToBank(storyId) {
 
 // =================== Collapsible Sections ===================
 
-const _sectionStates = { interviewer: false, questions: false, stories: true };
+const _sectionStates = { interviewer: false, questions: false, stories: true, whiteboard: false, mocks: false };
 
 function toggleSection(name) {
     _sectionStates[name] = !_sectionStates[name];
@@ -4625,11 +4787,7 @@ function loadDebrief(stage) {
     setDebriefRating(_debriefCache.rating || 0, true);
     initResizeHandles();
 
-    // Show/hide debrief section based on status
-    const debriefSection = document.getElementById('section-debrief');
-    if (debriefSection) {
-        debriefSection.style.display = stage.status === 'completed' ? '' : 'none';
-    }
+    // Debrief visibility is handled by updateStageSectionVisibility()
 }
 
 function setDebriefRating(rating, silent) {
@@ -5162,37 +5320,95 @@ async function handleUpdateNotes(jobId, notes) {
     await api.updateJobNotes(jobId, notes);
 }
 
-// =================== Resize Handle (JD panel ↔ main content) ===================
+// =================== Resize Handles (all panel dividers) ===================
 
-(function initResizeHandle() {
+(function initResizeHandles() {
     let isDragging = false;
     let handle = null;
+    let leftPanel = null;
+    let rightPanel = null;
+    let container = null;
+
+    let startX = 0;
 
     document.addEventListener('mousedown', (e) => {
-        if (!e.target.classList.contains('resize-handle-vertical')) return;
-        handle = e.target;
-        isDragging = true;
-        handle.classList.add('dragging');
-        document.body.style.cursor = 'col-resize';
-        document.body.style.userSelect = 'none';
-        e.preventDefault();
+        const target = e.target.closest('.resize-handle-vertical, .sidebar-edge-handle');
+        if (!target) return;
+
+        startX = e.clientX;
+
+        // Determine which panels to resize
+        if (target.classList.contains('sidebar-edge-handle')) {
+            // Sidebar resize — only when sidebar is open
+            const sidebar = target.closest('.activity-sidebar');
+            if (!sidebar || !sidebar.classList.contains('open')) return;
+            handle = target;
+            isDragging = true;
+            handle.classList.add('dragging');
+            document.body.style.cursor = 'col-resize';
+            document.body.style.userSelect = 'none';
+            e.preventDefault();
+            leftPanel = null;
+            rightPanel = null;
+            container = sidebar;
+        } else {
+            handle = target;
+            isDragging = true;
+            handle.classList.add('dragging');
+            document.body.style.cursor = 'col-resize';
+            document.body.style.userSelect = 'none';
+            e.preventDefault();
+            const resizeType = target.dataset.resize;
+            if (resizeType === 'resume') {
+                leftPanel = document.getElementById('resume-display');
+                rightPanel = document.getElementById('ai-feedback-panel');
+                container = target.closest('.two-panel');
+            } else if (resizeType === 'interview') {
+                leftPanel = document.getElementById('stage-detail-panel');
+                rightPanel = target.nextElementSibling;
+                container = target.closest('.interview-two-col');
+            } else {
+                // JD panel (original)
+                const row = target.closest('.expanded-content-row');
+                if (!row) return;
+                leftPanel = document.getElementById('jd-panel');
+                rightPanel = null;
+                container = row;
+            }
+        }
     });
 
     document.addEventListener('mousemove', (e) => {
-        if (!isDragging || !handle) return;
-        const row = handle.closest('.expanded-content-row');
-        if (!row) return;
-        const panel = document.getElementById('jd-panel');
-        if (!panel) return;
+        if (!isDragging || !handle || !container) return;
 
-        const rowRect = row.getBoundingClientRect();
-        const newWidth = e.clientX - rowRect.left;
-        const minW = 200;
-        const maxW = rowRect.width - 300;
-        const clampedWidth = Math.max(minW, Math.min(maxW, newWidth));
+        // Mark as dragged if moved more than 5px (prevents toggle on drag release)
+        if (Math.abs(e.clientX - startX) > 5) _edgeDragged = true;
 
-        panel.style.flex = 'none';
-        panel.style.width = clampedWidth + 'px';
+        const containerRect = container.getBoundingClientRect();
+
+        if (handle.classList.contains('sidebar-edge-handle')) {
+            // Sidebar resize: drag left edge to change width
+            const newWidth = containerRect.right - e.clientX;
+            const clamped = Math.max(200, Math.min(600, newWidth));
+            container.style.width = clamped + 'px';
+            container.style.minWidth = clamped + 'px';
+        } else if (leftPanel && rightPanel) {
+            // Two-panel resize: adjust left panel width, right gets remainder
+            const leftOffset = e.clientX - containerRect.left;
+            const minW = 200;
+            const maxW = containerRect.width - 200 - 5; // 5px for handle
+            const clamped = Math.max(minW, Math.min(maxW, leftOffset));
+
+            leftPanel.style.flex = 'none';
+            leftPanel.style.width = clamped + 'px';
+            rightPanel.style.flex = '1';
+        } else if (leftPanel) {
+            // JD panel (original behavior)
+            const newWidth = e.clientX - containerRect.left;
+            const clamped = Math.max(200, Math.min(containerRect.width - 300, newWidth));
+            leftPanel.style.flex = 'none';
+            leftPanel.style.width = clamped + 'px';
+        }
     });
 
     document.addEventListener('mouseup', () => {
@@ -5200,10 +5416,451 @@ async function handleUpdateNotes(jobId, notes) {
         isDragging = false;
         if (handle) handle.classList.remove('dragging');
         handle = null;
+        leftPanel = null;
+        rightPanel = null;
+        container = null;
         document.body.style.cursor = '';
         document.body.style.userSelect = '';
     });
 })();
+
+// =================== Whiteboard ===================
+
+let _whiteboardReady = false;
+let _whiteboardSaveTimer = null;
+let _whiteboardPendingScene = null;
+
+function initStageWhiteboard(stage) {
+    _whiteboardReady = false;
+    _whiteboardPendingScene = null;
+    clearTimeout(_whiteboardSaveTimer);
+
+    const iframe = document.getElementById('stage-whiteboard-iframe');
+    if (!iframe) return;
+
+    // Parse saved whiteboard data
+    let scene = null;
+    if (stage.whiteboard) {
+        try { scene = JSON.parse(stage.whiteboard); } catch (e) { scene = null; }
+    }
+
+    // If iframe is already loaded, post immediately; otherwise wait for ready message
+    _whiteboardPendingScene = scene;
+
+    // Force reload iframe to reset state for new stage
+    const src = iframe.src;
+    iframe.src = '';
+    requestAnimationFrame(() => { iframe.src = src; });
+}
+
+// Listen for whiteboard iframe messages
+window.addEventListener('message', (e) => {
+    if (!e.data || !e.data.type) return;
+
+    if (e.data.type === 'ready') {
+        const stageIframe = document.getElementById('stage-whiteboard-iframe');
+        if (stageIframe && e.source === stageIframe.contentWindow) {
+            _whiteboardReady = true;
+            if (_whiteboardPendingScene) {
+                stageIframe.contentWindow.postMessage({ type: 'load', scene: _whiteboardPendingScene }, '*');
+                _whiteboardPendingScene = null;
+            }
+        }
+    }
+
+    if (e.data.type === 'change' && expandedJobId && _selectedStageId) {
+        // Only handle if the message came from the stage whiteboard iframe (not a mock iframe)
+        const stageIframe = document.getElementById('stage-whiteboard-iframe');
+        if (stageIframe && e.source === stageIframe.contentWindow) {
+            clearTimeout(_whiteboardSaveTimer);
+            const jobId = expandedJobId;
+            const stageId = _selectedStageId;
+            _whiteboardSaveTimer = setTimeout(async () => {
+                await api.updateStage(jobId, stageId, { whiteboard: JSON.stringify(e.data.scene) });
+            }, 2000);
+        }
+    }
+});
+
+function toggleWhiteboardFullscreen() {
+    const container = document.getElementById('stage-whiteboard-container');
+    if (!container) return;
+    const isFullscreen = container.classList.toggle('fullscreen');
+
+    if (isFullscreen) {
+        // Block clicks from reaching the backdrop behind the fullscreen overlay
+        const clickGuard = (e) => { e.stopPropagation(); };
+        container.addEventListener('click', clickGuard);
+
+        // Escape key to exit fullscreen (stop propagation so it doesn't close the parent overlay)
+        const handler = (e) => {
+            if (e.key === 'Escape') {
+                e.stopPropagation();
+                e.preventDefault();
+                container.classList.remove('fullscreen');
+                container.removeEventListener('click', clickGuard);
+                document.removeEventListener('keydown', handler);
+            }
+        };
+        document.addEventListener('keydown', handler);
+    }
+}
+
+// =================== Mock Interviews ===================
+
+let _mockInterviewsCache = [];
+let _mockQuills = {};
+let _mockSaveTimers = {};
+let _expandedMockId = null;
+
+async function loadMockInterviews(stageId) {
+    if (!expandedJobId) return;
+    _mockInterviewsCache = [];
+    _mockQuills = {};
+    _mockSaveTimers = {};
+    _expandedMockId = null;
+
+    try {
+        const res = await api.getMocks(expandedJobId, stageId);
+        _mockInterviewsCache = res.mocks || [];
+    } catch (e) {
+        _mockInterviewsCache = [];
+    }
+    renderMockInterviews();
+}
+
+function renderMockInterviews() {
+    const container = document.getElementById('mock-interviews-list');
+    if (!container) return;
+
+    if (_mockInterviewsCache.length === 0) {
+        container.innerHTML = '<div class="empty-state">No mock sessions yet. Click + Add to practice.</div>';
+        return;
+    }
+
+    container.innerHTML = _mockInterviewsCache.map(mock => renderMockCard(mock)).join('');
+}
+
+function renderMockCard(mock) {
+    const isExpanded = mock.id === _expandedMockId;
+    const date = mock.created_at ? new Date(mock.created_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) : '';
+
+    // Parse debrief
+    let debrief = {};
+    try { debrief = JSON.parse(mock.debrief || '{}'); } catch (e) { debrief = {}; }
+    const rating = debrief.rating || 0;
+
+    const stars = [1, 2, 3, 4, 5].map(n =>
+        `<span class="debrief-star ${n <= rating ? 'active' : ''}" onclick="setMockDebriefRating(${mock.id}, ${n})">&#x2605;</span>`
+    ).join('');
+
+    return `
+        <div class="mock-card ${isExpanded ? 'expanded' : ''}" data-mock-id="${mock.id}">
+            <div class="mock-card-header" onclick="toggleMockCard(${mock.id})">
+                <div class="mock-card-header-left">
+                    <span class="mock-card-chevron">&#x25B6;</span>
+                    <input type="text" class="mock-card-title-input" value="${escapeHtml(mock.title || 'Mock Practice')}"
+                        onclick="event.stopPropagation()" onchange="saveMockTitle(${mock.id}, this.value)">
+                    <span class="mock-card-date">${date}</span>
+                </div>
+                <div class="mock-card-actions">
+                    <button class="btn btn-ghost btn-sm btn-danger-hover" onclick="event.stopPropagation();deleteMockInterview(${mock.id})" title="Delete">&#x2715;</button>
+                </div>
+            </div>
+            <div class="mock-card-body">
+                <div class="mock-section-label">Notes</div>
+                <div class="quill-resize-wrapper quill-mini" id="mock-notes-resize-${mock.id}">
+                    <div id="mock-notes-editor-${mock.id}"></div>
+                    <div class="resize-handle" data-target="mock-notes-resize-${mock.id}"></div>
+                </div>
+
+                <div class="mock-whiteboard-toggle">
+                    <label style="font-size:0.8rem;color:var(--text-secondary);cursor:pointer;">
+                        <input type="checkbox" id="mock-wb-toggle-${mock.id}" onchange="toggleMockWhiteboard(${mock.id}, this.checked)"
+                            ${mock.whiteboard ? 'checked' : ''}> Whiteboard
+                    </label>
+                </div>
+                <div class="mock-whiteboard-container" id="mock-wb-container-${mock.id}" style="display:${mock.whiteboard ? 'block' : 'none'};">
+                    <iframe id="mock-wb-iframe-${mock.id}" class="whiteboard-iframe" loading="lazy"></iframe>
+                </div>
+
+                <div class="mock-mini-debrief">
+                    <div class="mock-section-label">Debrief</div>
+                    <div class="mock-debrief-rating">
+                        <label>How did it go?</label>
+                        <div class="mock-debrief-stars">${stars}</div>
+                    </div>
+                    <div class="mock-section-label" style="margin-top:8px;">What went well?</div>
+                    <div class="quill-resize-wrapper quill-mini" id="mock-debrief-well-resize-${mock.id}">
+                        <div id="mock-debrief-well-editor-${mock.id}"></div>
+                        <div class="resize-handle" data-target="mock-debrief-well-resize-${mock.id}"></div>
+                    </div>
+                    <div class="mock-section-label" style="margin-top:8px;">What to improve?</div>
+                    <div class="quill-resize-wrapper quill-mini" id="mock-debrief-improve-resize-${mock.id}">
+                        <div id="mock-debrief-improve-editor-${mock.id}"></div>
+                        <div class="resize-handle" data-target="mock-debrief-improve-resize-${mock.id}"></div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    `;
+}
+
+function toggleMockCard(mockId) {
+    const wasExpanded = _expandedMockId === mockId;
+    _expandedMockId = wasExpanded ? null : mockId;
+
+    // Re-render all cards
+    renderMockInterviews();
+
+    // If expanding, initialize Quill editors after DOM update
+    if (!wasExpanded) {
+        requestAnimationFrame(() => initMockEditors(mockId));
+    }
+}
+
+function initMockEditors(mockId) {
+    const mock = _mockInterviewsCache.find(m => m.id === mockId);
+    if (!mock) return;
+
+    // Notes editor
+    _mockQuills[`notes-${mockId}`] = initQuill(
+        `mock-notes-editor-${mockId}`, QUILL_MINI_TOOLBAR,
+        'Practice notes, talking points...',
+        () => debouncedMockSave(mockId, 'notes')
+    );
+    if (_mockQuills[`notes-${mockId}`] && mock.notes) {
+        _mockQuills[`notes-${mockId}`].root.innerHTML = contentToHtml(mock.notes);
+    }
+
+    // Debrief "went well" editor
+    let debrief = {};
+    try { debrief = JSON.parse(mock.debrief || '{}'); } catch (e) { debrief = {}; }
+
+    _mockQuills[`debrief-well-${mockId}`] = initQuill(
+        `mock-debrief-well-editor-${mockId}`, QUILL_MINI_TOOLBAR,
+        'What went well...',
+        () => debouncedMockSave(mockId, 'debrief')
+    );
+    if (_mockQuills[`debrief-well-${mockId}`] && debrief.went_well) {
+        _mockQuills[`debrief-well-${mockId}`].root.innerHTML = debrief.went_well;
+    }
+
+    // Debrief "to improve" editor
+    _mockQuills[`debrief-improve-${mockId}`] = initQuill(
+        `mock-debrief-improve-editor-${mockId}`, QUILL_MINI_TOOLBAR,
+        'What to improve...',
+        () => debouncedMockSave(mockId, 'debrief')
+    );
+    if (_mockQuills[`debrief-improve-${mockId}`] && debrief.to_improve) {
+        _mockQuills[`debrief-improve-${mockId}`].root.innerHTML = debrief.to_improve;
+    }
+
+    initResizeHandles();
+
+    // Load mock whiteboard if exists
+    if (mock.whiteboard) {
+        loadMockWhiteboard(mockId, mock.whiteboard);
+    }
+}
+
+function debouncedMockSave(mockId, field) {
+    const key = `${field}-${mockId}`;
+    clearTimeout(_mockSaveTimers[key]);
+    _mockSaveTimers[key] = setTimeout(() => saveMockField(mockId, field), 800);
+}
+
+async function saveMockField(mockId, field) {
+    if (!expandedJobId || !_selectedStageId) return;
+
+    const data = {};
+    if (field === 'notes') {
+        const quill = _mockQuills[`notes-${mockId}`];
+        if (quill) data.notes = _getQuillHtml(quill);
+    } else if (field === 'debrief') {
+        const mock = _mockInterviewsCache.find(m => m.id === mockId);
+        let existing = {};
+        try { existing = JSON.parse(mock?.debrief || '{}'); } catch (e) { existing = {}; }
+
+        const wellQuill = _mockQuills[`debrief-well-${mockId}`];
+        const improveQuill = _mockQuills[`debrief-improve-${mockId}`];
+        existing.went_well = wellQuill ? _getQuillHtml(wellQuill) : (existing.went_well || '');
+        existing.to_improve = improveQuill ? _getQuillHtml(improveQuill) : (existing.to_improve || '');
+        data.debrief = JSON.stringify(existing);
+
+        // Update cache
+        if (mock) mock.debrief = data.debrief;
+    }
+
+    if (Object.keys(data).length > 0) {
+        await api.updateMock(expandedJobId, _selectedStageId, mockId, data);
+        // Update cache
+        const mock = _mockInterviewsCache.find(m => m.id === mockId);
+        if (mock && data.notes !== undefined) mock.notes = data.notes;
+    }
+}
+
+async function saveMockTitle(mockId, newTitle) {
+    if (!expandedJobId || !_selectedStageId) return;
+    const title = (newTitle || '').trim() || 'Mock Practice';
+    await api.updateMock(expandedJobId, _selectedStageId, mockId, { title });
+    const mock = _mockInterviewsCache.find(m => m.id === mockId);
+    if (mock) mock.title = title;
+}
+
+function setMockDebriefRating(mockId, rating) {
+    if (!expandedJobId || !_selectedStageId) return;
+    const mock = _mockInterviewsCache.find(m => m.id === mockId);
+    if (!mock) return;
+
+    let debrief = {};
+    try { debrief = JSON.parse(mock.debrief || '{}'); } catch (e) { debrief = {}; }
+    debrief.rating = rating;
+    mock.debrief = JSON.stringify(debrief);
+
+    // Update star visuals
+    const card = document.querySelector(`.mock-card[data-mock-id="${mockId}"]`);
+    if (card) {
+        card.querySelectorAll('.mock-debrief-stars .debrief-star').forEach(star => {
+            const r = parseInt(star.getAttribute('onclick').match(/\d+$/)?.[0] || 0);
+            star.classList.toggle('active', r <= rating);
+        });
+    }
+
+    api.updateMock(expandedJobId, _selectedStageId, mockId, { debrief: mock.debrief });
+}
+
+async function addMockInterview() {
+    if (!expandedJobId || !_selectedStageId) {
+        showToast('No job/stage selected (job=' + expandedJobId + ', stage=' + _selectedStageId + ')', 'error');
+        return;
+    }
+
+    // Expand the section if collapsed
+    if (!_sectionStates.mocks) toggleSection('mocks');
+
+    const url = `/api/interview-stages/${expandedJobId}/${_selectedStageId}/mocks`;
+    let resp, result;
+    try {
+        resp = await fetch(url, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ title: 'Mock Practice' })
+        });
+    } catch (e) {
+        showToast('Network error: ' + (e.message || e), 'error');
+        return;
+    }
+
+    try {
+        result = await resp.json();
+    } catch (e) {
+        const text = await resp.text().catch(() => '');
+        showToast(`Server returned non-JSON (${resp.status}): ${text.slice(0, 100)}`, 'error');
+        return;
+    }
+
+    if (!resp.ok || result.error) {
+        showToast(result.error || `Server error ${resp.status}`, 'error');
+        return;
+    }
+
+    await loadMockInterviews(_selectedStageId);
+    if (result.id) {
+        _expandedMockId = result.id;
+        renderMockInterviews();
+        requestAnimationFrame(() => {
+            try { initMockEditors(result.id); } catch (e) { console.error('initMockEditors error:', e); }
+        });
+    }
+}
+
+async function deleteMockInterview(mockId) {
+    if (!expandedJobId || !_selectedStageId) return;
+    if (!confirm('Delete this mock interview session?')) return;
+
+    try {
+        await api.deleteMock(expandedJobId, _selectedStageId, mockId);
+        _mockInterviewsCache = _mockInterviewsCache.filter(m => m.id !== mockId);
+        if (_expandedMockId === mockId) _expandedMockId = null;
+        renderMockInterviews();
+    } catch (e) {
+        showToast('Failed to delete mock interview', 'error');
+    }
+}
+
+function toggleMockWhiteboard(mockId, show) {
+    const container = document.getElementById(`mock-wb-container-${mockId}`);
+    if (!container) return;
+    container.style.display = show ? 'block' : 'none';
+
+    if (show) {
+        const iframe = document.getElementById(`mock-wb-iframe-${mockId}`);
+        if (iframe && (!iframe.src || iframe.src === 'about:blank' || !iframe.src.includes('excalidraw'))) {
+            iframe.src = '/static/excalidraw.html';
+        }
+        const mock = _mockInterviewsCache.find(m => m.id === mockId);
+        if (mock && mock.whiteboard) {
+            loadMockWhiteboard(mockId, mock.whiteboard);
+        }
+    }
+}
+
+let _mockWhiteboardPending = {}; // mockId -> scene
+
+function loadMockWhiteboard(mockId, whiteboardJson) {
+    const iframe = document.getElementById(`mock-wb-iframe-${mockId}`);
+    if (!iframe) return;
+
+    let scene = null;
+    try { scene = typeof whiteboardJson === 'string' ? JSON.parse(whiteboardJson) : whiteboardJson; } catch (e) { return; }
+    if (!scene || !scene.elements || scene.elements.length === 0) return;
+
+    _mockWhiteboardPending[mockId] = scene;
+
+    // If iframe not loaded yet, set src and wait
+    if (!iframe.src || iframe.src === 'about:blank') {
+        iframe.src = '/static/excalidraw.html';
+    }
+}
+
+// Handle mock whiteboard ready + change messages
+window.addEventListener('message', (e) => {
+    if (!e.data || !e.data.type) return;
+    if (!expandedJobId || !_selectedStageId) return;
+
+    // Find which mock iframe sent the message
+    let sourceMockId = null;
+    for (const mock of _mockInterviewsCache) {
+        const iframe = document.getElementById(`mock-wb-iframe-${mock.id}`);
+        if (iframe && e.source === iframe.contentWindow) {
+            sourceMockId = mock.id;
+            break;
+        }
+    }
+    if (sourceMockId === null) return;
+
+    if (e.data.type === 'ready') {
+        const pending = _mockWhiteboardPending[sourceMockId];
+        if (pending) {
+            const iframe = document.getElementById(`mock-wb-iframe-${sourceMockId}`);
+            if (iframe) iframe.contentWindow.postMessage({ type: 'load', scene: pending }, '*');
+            delete _mockWhiteboardPending[sourceMockId];
+        }
+    }
+
+    if (e.data.type === 'change') {
+        const mockId = sourceMockId;
+        const key = `wb-${mockId}`;
+        clearTimeout(_mockSaveTimers[key]);
+        _mockSaveTimers[key] = setTimeout(async () => {
+            const wbData = JSON.stringify(e.data.scene);
+            await api.updateMock(expandedJobId, _selectedStageId, mockId, { whiteboard: wbData });
+            const mock = _mockInterviewsCache.find(m => m.id === mockId);
+            if (mock) mock.whiteboard = wbData;
+        }, 2000);
+    }
+});
 
 // =================== Init ===================
 

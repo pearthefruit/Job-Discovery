@@ -36,14 +36,15 @@ Analyze the following job description and the provided candidate context (Resume
     *   *Hard Skills/Tools*: (e.g., Python, SQL, Jira).
 
 #### 3. Customized Job Blurbs
-*   **Instruction**: The user has provided a library of "Job Blurbs" with different angles (e.g., SEO, V1, V2) for their past roles.
-    1.  Identify the corresponding section in the "Job Blurbs" reference for each relevant role.
-    2.  Select the specific variant or combine details that best align with the *target job's requirements*.
-        *   *Example*: If the target job emphasizes "Growth", use the "Traffic Generation" or "Growth" variant.
-        *   *Example*: If the target job is technical, use the "ML/AI" focused variant.
-    3.  Refine the selected content into 2-3 short, punchy sentences.
+*   **Instruction**: Write a short narrative blurb (2-4 sentences) for each of the candidate's relevant past roles, tailored to the target job.
+    - These are NOT resume bullets reformatted as sentences. They are conversational "elevator pitch" descriptions of what the candidate did at each company.
+    - Lead with the role archetype or what the company/team does (e.g., "Recruited to lead the media data business" or "Product Manager and Sales Engineer hybrid role").
+    - Describe the business context, product, or mission in a way that connects to the target role.
+    - Weave in 1-2 key impacts naturally — don't just list metrics.
+    - If the user has provided a "Job Blurbs" library, use those as inspiration but adapt the angle to match the target job's requirements (e.g., if the target emphasizes "Growth", lean into growth framing; if technical, lean into the tech stack).
+    - Tone: confident, specific, conversational — like explaining your role to a smart recruiter over coffee.
 *   **Format**:
-    *   **[Role Name]**: [Sentence 1]. [Sentence 2]. [Sentence 3].
+    *   **[Role Name]**: [Narrative blurb — 2-4 sentences, NOT a list of accomplishments]
 
 Format the output in clean Markdown without spacing issues."""
 

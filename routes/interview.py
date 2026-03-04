@@ -779,3 +779,32 @@ def reorder_stage_stories_route(job_id, stage_id):
         return jsonify({"error": "story_ids required"}), 400
     db.reorder_stage_stories(stage_id, story_ids)
     return jsonify({"message": "Stage stories reordered"})
+
+
+# =================== MOCK INTERVIEWS API ===================
+
+@interview_bp.route("/api/interview-stages/<int:job_id>/<int:stage_id>/mocks", methods=["GET"])
+def get_mocks_route(job_id, stage_id):
+    mocks = db.get_mock_interviews(stage_id)
+    return jsonify({"mocks": mocks})
+
+
+@interview_bp.route("/api/interview-stages/<int:job_id>/<int:stage_id>/mocks", methods=["POST"])
+def add_mock_route(job_id, stage_id):
+    data = request.get_json() or {}
+    title = data.get("title", "Mock Practice").strip() or "Mock Practice"
+    mock_id = db.add_mock_interview(stage_id, title)
+    return jsonify({"id": mock_id, "message": "Mock interview added"}), 201
+
+
+@interview_bp.route("/api/interview-stages/<int:job_id>/<int:stage_id>/mocks/<int:mock_id>", methods=["PUT"])
+def update_mock_route(job_id, stage_id, mock_id):
+    data = request.get_json() or {}
+    db.update_mock_interview(mock_id, **data)
+    return jsonify({"message": "Mock interview updated"})
+
+
+@interview_bp.route("/api/interview-stages/<int:job_id>/<int:stage_id>/mocks/<int:mock_id>", methods=["DELETE"])
+def delete_mock_route(job_id, stage_id, mock_id):
+    db.delete_mock_interview(mock_id)
+    return jsonify({"message": "Mock interview deleted"})

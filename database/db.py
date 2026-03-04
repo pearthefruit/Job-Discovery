@@ -58,6 +58,8 @@ class JobDiscoveryDB:
             ("stories", "stage_only", "INTEGER DEFAULT 0"),
             ("stories", "competency", "TEXT"),
             ("stories", "company", "TEXT"),
+            ("interview_stages", "whiteboard", "TEXT"),
+            ("interview_stages", "live_notes", "TEXT"),
         ]
         with self.get_connection() as conn:
             for table, column, col_type in migrations:
@@ -110,6 +112,19 @@ class JobDiscoveryDB:
             )""")
             conn.execute("CREATE INDEX IF NOT EXISTS idx_stage_stories_stage ON interview_stage_stories(stage_id)")
             conn.execute("CREATE INDEX IF NOT EXISTS idx_stage_stories_story ON interview_stage_stories(story_id)")
+            # Mock interviews table
+            conn.execute("""CREATE TABLE IF NOT EXISTS mock_interviews (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                stage_id INTEGER NOT NULL,
+                title TEXT NOT NULL DEFAULT 'Mock Practice',
+                notes TEXT,
+                whiteboard TEXT,
+                debrief TEXT,
+                created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                FOREIGN KEY(stage_id) REFERENCES interview_stages(id) ON DELETE CASCADE
+            )""")
+            conn.execute("CREATE INDEX IF NOT EXISTS idx_mock_interviews_stage ON mock_interviews(stage_id)")
 
     # --- Target URLs ---
 
@@ -731,7 +746,7 @@ class JobDiscoveryDB:
             return dict(row) if row else None
 
     def update_stage(self, stage_id, **kwargs):
-        allowed = {"name", "stage_order", "notes", "status", "scheduled_at", "questions", "debrief", "interviewer"}
+        allowed = {"name", "stage_order", "notes", "status", "scheduled_at", "questions", "debrief", "interviewer", "whiteboard", "live_notes"}
         fields = {k: v for k, v in kwargs.items() if k in allowed}
         if not fields:
             return
@@ -804,6 +819,41 @@ class JobDiscoveryDB:
                        WHERE stage_id = ? AND story_id = ?""",
                     (order, stage_id, story_id),
                 )
+
+    # --- Mock Interviews ---
+
+    def add_mock_interview(self, stage_id, title="Mock Practice"):
+        with self.get_connection() as conn:
+            cursor = conn.execute(
+                "INSERT INTO mock_interviews (stage_id, title) VALUES (?, ?)",
+                (stage_id, title),
+            )
+            return cursor.lastrowid
+
+    def get_mock_interviews(self, stage_id):
+        with self.get_connection() as conn:
+            rows = conn.execute(
+                "SELECT * FROM mock_interviews WHERE stage_id = ? ORDER BY created_at ASC",
+                (stage_id,),
+            ).fetchall()
+            return [dict(r) for r in rows]
+
+    def update_mock_interview(self, mock_id, **kwargs):
+        allowed = {"title", "notes", "whiteboard", "debrief"}
+        fields = {k: v for k, v in kwargs.items() if k in allowed}
+        if not fields:
+            return
+        fields_sql = ", ".join(f"{k} = ?" for k in fields)
+        values = list(fields.values()) + [mock_id]
+        with self.get_connection() as conn:
+            conn.execute(
+                f"UPDATE mock_interviews SET {fields_sql}, updated_at = CURRENT_TIMESTAMP WHERE id = ?",
+                values,
+            )
+
+    def delete_mock_interview(self, mock_id):
+        with self.get_connection() as conn:
+            conn.execute("DELETE FROM mock_interviews WHERE id = ?", (mock_id,))
 
     # --- Job Blurbs ---
 
