@@ -1,0 +1,818 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>JobDiscovery</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="/static/css/style.css">
+    <link href="https://cdn.jsdelivr.net/npm/quill@2.0.3/dist/quill.snow.css" rel="stylesheet">
+    <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/quill@2.0.3/dist/quill.js"></script>
+</head>
+<body>
+    <!-- Header -->
+    <header class="header">
+        <div class="header-left">
+            <h1 class="logo">JobDiscovery</h1>
+            <span class="version">v2</span>
+        </div>
+        <div class="header-right">
+            <div id="scraper-badge" class="badge badge-idle">Idle</div>
+        </div>
+    </header>
+
+    <!-- Tab Navigation -->
+    <nav class="tab-nav">
+        <button class="tab-btn active" data-tab="discovery" onclick="switchTab('discovery')">
+            Discovery
+        </button>
+        <button class="tab-btn" data-tab="board" onclick="switchTab('board')">
+            Board
+        </button>
+        <button class="tab-btn" data-tab="toolkit" onclick="switchTab('toolkit')">
+            Toolkit
+        </button>
+    </nav>
+
+    <!-- =================== DISCOVERY TAB =================== -->
+    <main id="tab-discovery" class="tab-content active">
+        <!-- Stats Row -->
+        <div class="stats-row">
+            <div class="stat-card card">
+                <div class="stat-value" id="stat-total">0</div>
+                <div class="stat-label">Total Jobs</div>
+            </div>
+            <div class="stat-card card">
+                <div class="stat-value" id="stat-today">0</div>
+                <div class="stat-label">New Today</div>
+            </div>
+            <div class="stat-card card">
+                <div class="stat-value" id="stat-sources">0</div>
+                <div class="stat-label">Active Sources</div>
+            </div>
+            <div class="stat-card card">
+                <div class="stat-value" id="stat-filters">0</div>
+                <div class="stat-label">Keywords</div>
+            </div>
+        </div>
+
+        <!-- Scraper Control -->
+        <div class="card scraper-control">
+            <div class="scraper-header">
+                <h2>Scraper</h2>
+                <button id="btn-run-scraper" class="btn btn-primary" onclick="handleRunScraper()">Run Scraper</button>
+            </div>
+            <div id="scraper-progress" class="scraper-progress" style="display:none;">
+                <div class="progress-bar-container">
+                    <div id="progress-bar" class="progress-bar"></div>
+                </div>
+                <div id="progress-text" class="progress-text"></div>
+            </div>
+            <div id="scraper-status-detail" class="scraper-detail"></div>
+            <div id="activity-log-container" class="activity-log-container" style="display:none;">
+                <div class="activity-log-header">
+                    <span>Activity Log</span>
+                    <button class="btn btn-ghost btn-sm" onclick="clearActivityLog()">Clear</button>
+                </div>
+                <div id="activity-log" class="activity-log"></div>
+            </div>
+        </div>
+
+        <!-- Collapsible Sources -->
+        <details class="card collapsible-section">
+            <summary class="collapsible-header">
+                <h2>Sources</h2>
+                <span class="badge-count" id="source-count-badge">0</span>
+            </summary>
+            <div class="collapsible-body">
+                <form id="add-source-form" onsubmit="handleAddSource(event)">
+                    <div class="form-row">
+                        <input type="url" id="source-url" class="input" placeholder="https://careers.company.com/jobs or LinkedIn SERP URL" required>
+                        <input type="text" id="source-company" class="input" placeholder="Company name" required>
+                        <button type="submit" class="btn btn-primary">Add</button>
+                    </div>
+                    <p class="hint">LinkedIn URLs are auto-detected. Company career pages, Workday, Greenhouse, Lever, etc. are all supported.</p>
+                </form>
+                <div id="sources-list" class="sources-list">
+                    <div class="empty-state">No sources added yet.</div>
+                </div>
+            </div>
+        </details>
+
+        <!-- Collapsible Filters -->
+        <details class="card collapsible-section">
+            <summary class="collapsible-header">
+                <h2>Keyword Filters</h2>
+                <span class="badge-count" id="filter-count-badge">0</span>
+            </summary>
+            <div class="collapsible-body">
+                <p class="hint">Add keywords to include or exclude from job titles. Include filters save matching jobs; exclude filters reject them (e.g. exclude "Director" to skip senior roles).</p>
+                <form id="add-filter-form" onsubmit="handleAddFilter(event)">
+                    <div class="form-row">
+                        <select id="filter-type-select" class="input" style="flex:0 0 auto;width:auto;">
+                            <option value="include">Include</option>
+                            <option value="exclude">Exclude</option>
+                        </select>
+                        <input type="text" id="filter-keyword" class="input" placeholder="e.g. Product Manager, Data Analyst, Director..." required>
+                        <button type="submit" class="btn btn-primary">Add</button>
+                        <button type="button" id="btn-clear-filters" class="btn btn-ghost btn-sm btn-danger-text" onclick="handleClearFilters()" style="display:none;">Clear All</button>
+                    </div>
+                </form>
+                <div id="filters-list" class="filters-list">
+                    <div class="empty-state">No keyword filters set. All jobs will be saved.</div>
+                </div>
+            </div>
+        </details>
+
+        <!-- Jobs Search + Import -->
+        <div class="card">
+            <div class="search-bar" style="display:flex;gap:0.5rem;align-items:center;">
+                <input type="text" id="job-search" class="input" placeholder="Search jobs by title, company, or location..." oninput="debounceSearch()" style="flex:1;">
+                <label class="group-toggle-label" title="Group by company">
+                    <span>Group</span>
+                    <label class="toggle">
+                        <input type="checkbox" id="group-by-company" onchange="toggleGroupByCompany()">
+                        <span class="toggle-slider"></span>
+                    </label>
+                </label>
+                <button class="btn btn-primary btn-sm" onclick="showImportJobModal()">+ Import Job</button>
+            </div>
+            <div id="filter-indicator-bar" class="filter-indicator-bar" style="display:none;"></div>
+        </div>
+
+        <!-- Jobs Table -->
+        <div class="card">
+            <div class="table-wrapper">
+                <table class="jobs-table">
+                    <thead>
+                        <tr>
+                            <th class="sortable-th" onclick="toggleJobSort('title')"><span class="th-label">Title</span><span class="sort-icon" data-col="title"></span></th>
+                            <th class="filterable-th sortable-th" onclick="toggleJobSort('company')">
+                                <span class="th-label">Company</span><span class="sort-icon" data-col="company"></span>
+                                <button class="col-filter-btn" data-column="company" onclick="toggleColumnFilter(event, 'company')" title="Filter company">&#9662;</button>
+                            </th>
+                            <th class="filterable-th sortable-th" onclick="toggleJobSort('location')">
+                                <span class="th-label">Location</span><span class="sort-icon" data-col="location"></span>
+                                <button class="col-filter-btn" data-column="location" onclick="toggleColumnFilter(event, 'location')" title="Filter location">&#9662;</button>
+                            </th>
+                            <th class="sortable-th" onclick="toggleJobSort('salary')"><span class="th-label">Salary</span><span class="sort-icon" data-col="salary"></span></th>
+                            <th class="sortable-th" onclick="toggleJobSort('date_found')"><span class="th-label">Found</span><span class="sort-icon" data-col="date_found"></span></th>
+                            <th class="filterable-th sortable-th" onclick="toggleJobSort('status')">
+                                <span class="th-label">Status</span><span class="sort-icon" data-col="status"></span>
+                                <button class="col-filter-btn" data-column="status" onclick="toggleColumnFilter(event, 'status')" title="Filter status">&#9662;</button>
+                            </th>
+                            <th>Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody id="jobs-tbody">
+                        <tr><td colspan="7" class="empty-state">No jobs discovered yet. Add sources and run the scraper.</td></tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </main>
+
+    <!-- =================== BOARD TAB =================== -->
+    <main id="tab-board" class="tab-content">
+        <!-- Board Stats -->
+        <div class="stats-row">
+            <div class="stat-card card">
+                <div class="stat-value" id="board-stat-new">0</div>
+                <div class="stat-label">New</div>
+            </div>
+            <div class="stat-card card">
+                <div class="stat-value" id="board-stat-applying">0</div>
+                <div class="stat-label">Applying</div>
+            </div>
+            <div class="stat-card card">
+                <div class="stat-value" id="board-stat-applied">0</div>
+                <div class="stat-label">Applied</div>
+            </div>
+            <div class="stat-card card">
+                <div class="stat-value" id="board-stat-interviewing">0</div>
+                <div class="stat-label">Interviewing</div>
+            </div>
+            <div class="stat-card card">
+                <div class="stat-value" id="board-stat-offers">0</div>
+                <div class="stat-label">Offers</div>
+            </div>
+            <div class="stat-card card">
+                <div class="stat-value" id="board-stat-rejected">0</div>
+                <div class="stat-label">Rejected</div>
+            </div>
+        </div>
+
+        <!-- Board Controls -->
+        <div class="card" style="margin-bottom:1rem;">
+            <div class="search-bar" style="display:flex;gap:0.5rem;align-items:center;">
+                <input type="text" id="board-search" class="input" placeholder="Filter by title or company..." oninput="debounceBoardFilter()" style="flex:1;">
+                <select id="board-company-filter" class="input input-inline" onchange="applyBoardFilters()" style="max-width:200px;">
+                    <option value="">All companies</option>
+                </select>
+                <label class="group-toggle-label" title="Group by company">
+                    <span>Group</span>
+                    <label class="toggle">
+                        <input type="checkbox" id="board-group-by-company" onchange="applyBoardFilters()">
+                        <span class="toggle-slider"></span>
+                    </label>
+                </label>
+            </div>
+        </div>
+
+        <!-- Kanban Board -->
+        <div id="kanban-board" class="kanban-board">
+            <div class="kanban-column" data-status="new">
+                <div class="kanban-column-header">
+                    <h3>New</h3>
+                    <span class="badge-count" id="kanban-count-new">0</span>
+                </div>
+                <div class="kanban-cards" id="kanban-new"></div>
+            </div>
+            <div class="kanban-column" data-status="applying">
+                <div class="kanban-column-header">
+                    <h3>Applying</h3>
+                    <span class="badge-count" id="kanban-count-applying">0</span>
+                </div>
+                <div class="kanban-cards" id="kanban-applying"></div>
+            </div>
+            <div class="kanban-column" data-status="applied">
+                <div class="kanban-column-header">
+                    <h3>Applied</h3>
+                    <span class="badge-count" id="kanban-count-applied">0</span>
+                </div>
+                <div class="kanban-cards" id="kanban-applied"></div>
+            </div>
+            <div class="kanban-column" data-status="interviewing">
+                <div class="kanban-column-header">
+                    <h3>Interviewing</h3>
+                    <span class="badge-count" id="kanban-count-interviewing">0</span>
+                </div>
+                <div class="kanban-cards" id="kanban-interviewing"></div>
+            </div>
+            <div class="kanban-column" data-status="offer">
+                <div class="kanban-column-header">
+                    <h3>Offer</h3>
+                    <span class="badge-count" id="kanban-count-offer">0</span>
+                </div>
+                <div class="kanban-cards" id="kanban-offer"></div>
+            </div>
+            <div class="kanban-column kanban-column-muted" data-status="rejected">
+                <div class="kanban-column-header">
+                    <h3>Rejected</h3>
+                    <span class="badge-count" id="kanban-count-rejected">0</span>
+                </div>
+                <div class="kanban-cards" id="kanban-rejected"></div>
+            </div>
+        </div>
+
+    </main>
+
+    <!-- =================== TOOLKIT TAB =================== -->
+    <main id="tab-toolkit" class="tab-content">
+        <!-- Resume Bank -->
+        <div class="card">
+            <div class="section-header-row">
+                <h2>Resume Bank</h2>
+                <div>
+                    <form id="resume-bank-upload-form" style="display:inline;" onsubmit="handleResumeBankUpload(event)">
+                        <label class="btn btn-primary btn-sm" style="cursor:pointer;">
+                            Upload .docx
+                            <input type="file" id="resume-bank-file" accept=".docx" style="display:none;" onchange="this.closest('form').requestSubmit()">
+                        </label>
+                    </form>
+                </div>
+            </div>
+            <div id="resume-bank-list" class="resume-bank-list">
+                <div class="empty-state">No resumes uploaded yet. Upload a .docx resume to get started.</div>
+            </div>
+        </div>
+
+        <!-- Story Bank -->
+        <div class="card" style="margin-top:1rem;">
+            <div class="section-header-row">
+                <h2>Story Bank</h2>
+                <div>
+                    <button class="btn btn-ghost btn-sm" onclick="showStoryImport()">Import</button>
+                    <button class="btn btn-ghost btn-sm" onclick="showAddStory()">Add Story</button>
+                    <button class="btn btn-primary btn-sm" onclick="showStoryBuilder()">Build Story</button>
+                </div>
+            </div>
+
+            <!-- Story Bank Controls -->
+            <div id="story-controls-bar" class="search-bar" style="display:flex;gap:0.5rem;align-items:center;margin-top:0.75rem;">
+                <input type="text" id="story-search" class="input" placeholder="Search stories..." oninput="debounceStoryFilter()" style="flex:1;">
+                <div style="position:relative;display:inline-block;">
+                    <button class="btn btn-ghost btn-sm col-filter-btn" id="story-company-filter-btn" onclick="toggleStoryFilter(event, 'company')">Company &#9662;</button>
+                </div>
+                <div style="position:relative;display:inline-block;">
+                    <button class="btn btn-ghost btn-sm col-filter-btn" id="story-competency-filter-btn" onclick="toggleStoryFilter(event, 'competency')">Competency &#9662;</button>
+                </div>
+                <label class="group-toggle-label" title="Group stories">
+                    <span>Group</span>
+                    <select id="story-group-by" class="input input-inline" onchange="applyStoryFilters()" style="max-width:140px;font-size:0.78rem;padding:0.25rem 0.4rem;">
+                        <option value="">None</option>
+                        <option value="company">Company</option>
+                        <option value="competency">Competency</option>
+                    </select>
+                </label>
+            </div>
+            <div id="story-filter-indicator-bar" class="filter-indicator-bar" style="display:none;margin-top:0.35rem;"></div>
+
+            <!-- Import area -->
+            <div id="story-import-area" style="display:none;">
+                <textarea id="story-import-text" class="input textarea" rows="6"
+                    placeholder="Paste your stories in SAIL format (# Title, ### Hook, ### Context, ### Action, ### Results, ### Takeaways)..."></textarea>
+                <div class="form-row" style="margin-top:8px;">
+                    <button class="btn btn-primary btn-sm" onclick="handleImportStories()">Parse & Import</button>
+                    <button class="btn btn-ghost btn-sm" onclick="hideStoryImport()">Cancel</button>
+                </div>
+            </div>
+
+            <!-- Add story form -->
+            <div id="story-add-area" style="display:none;">
+                <div class="form-stack">
+                    <input type="text" id="story-title" class="input" placeholder="Story title (e.g. 'Automation Initiative at Nestle')">
+                    <input type="text" id="story-hook" class="input" placeholder="Hook - 1-2 sentence summary">
+                    <div class="quill-resize-wrapper" id="story-add-content-wrap" style="min-height:200px;">
+                        <div id="story-add-content-quill"></div>
+                        <div class="resize-handle" data-target="story-add-content-wrap"></div>
+                    </div>
+                    <input type="text" id="story-tags" class="input" placeholder="Tags (comma-separated, e.g. leadership, data, product)">
+                    <input type="text" id="story-company" class="input" placeholder="Company (e.g. Nestlé, OpenBrand, Syndigo)">
+                    <div class="competency-input-group">
+                        <label class="form-label-sm">Competencies</label>
+                        <div id="story-competency-chips" class="competency-chip-container"></div>
+                        <div class="competency-quick-picks" id="story-competency-picks"></div>
+                        <input type="text" id="story-competency-input" class="input" placeholder="Add custom competency... (Enter to add)">
+                    </div>
+                </div>
+                <div class="form-row" style="margin-top:8px;">
+                    <button class="btn btn-primary btn-sm" onclick="handleAddStory()">Save Story</button>
+                    <button class="btn btn-ghost btn-sm" onclick="hideAddStory()">Cancel</button>
+                </div>
+            </div>
+
+            <!-- Story Builder -->
+            <div id="story-builder-area" style="display:none;">
+                <div class="form-stack">
+                    <input type="text" id="builder-title" class="input" placeholder="Story title (e.g. 'Pricing Model Launch at OpenBrand')">
+                    <textarea id="builder-bullet" class="input textarea" rows="3" placeholder="Paste a resume bullet point to expand into a full interview story..."></textarea>
+                    <textarea id="builder-context" class="input textarea" rows="2" placeholder="Optional: additional context (challenges, team size, timeline, etc.)"></textarea>
+                    <input type="text" id="builder-company" class="input" placeholder="Company (e.g. Nestlé, OpenBrand)">
+                </div>
+                <div class="form-row" style="margin-top:8px;">
+                    <button id="btn-generate-story" class="btn btn-primary btn-sm" onclick="handleGenerateStory()">Generate Story</button>
+                    <button class="btn btn-ghost btn-sm" onclick="hideStoryBuilder()">Cancel</button>
+                </div>
+                <div id="builder-preview" style="display:none;margin-top:1rem;">
+                    <div style="font-size:0.7rem;font-weight:600;text-transform:uppercase;letter-spacing:0.05em;color:var(--text-muted);margin-bottom:0.5rem;">Generated Story</div>
+                    <div id="builder-preview-content" class="markdown-body" style="padding:0.75rem;background:rgba(0,0,0,0.15);border-radius:var(--radius-sm);"></div>
+                    <div class="form-row" style="margin-top:8px;">
+                        <button class="btn btn-success btn-sm" onclick="saveBuiltStory()">Save to Story Bank</button>
+                        <button class="btn btn-ghost btn-sm" onclick="handleRefineStory()">Refine</button>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Stories list -->
+            <div id="stories-list" class="stories-list">
+                <div class="empty-state">No stories yet. Add or import your interview stories.</div>
+            </div>
+        </div>
+    </main>
+
+    <!-- =================== EXPANDED JOB OVERLAY =================== -->
+    <div id="job-expanded-overlay" class="expanded-overlay" style="display:none;">
+        <div class="expanded-backdrop" onclick="collapseJobView()"></div>
+        <div class="expanded-container">
+            <!-- Header -->
+            <div class="expanded-header">
+                <div class="expanded-title-area">
+                    <h2 id="expanded-job-title" class="editable-field" onclick="editJobField(this, 'title')" title="Click to edit"></h2>
+                    <span id="expanded-job-company" class="expanded-company editable-field" onclick="editJobField(this, 'company')" title="Click to edit"></span>
+                    <span class="expanded-meta-sep">|</span>
+                    <span id="expanded-job-location" class="expanded-meta editable-field" onclick="editJobField(this, 'location')" title="Click to edit"></span>
+                    <span class="expanded-meta-sep">|</span>
+                    <span id="expanded-job-salary" class="expanded-meta editable-field" onclick="editJobField(this, 'salary')" title="Click to edit"></span>
+                </div>
+                <div class="expanded-header-actions">
+                    <select id="expanded-status-select" class="input input-inline" onchange="handleExpandedStatusChange(this.value)">
+                        <option value="new">New</option>
+                        <option value="applying">Applying</option>
+                        <option value="applied">Applied</option>
+                        <option value="interviewing">Interviewing</option>
+                        <option value="offer">Offer</option>
+                        <option value="rejected">Rejected</option>
+                        <option value="ignored">Ignored</option>
+                    </select>
+                    <button id="btn-toggle-jd" class="btn btn-sm jd-toggle-btn" onclick="toggleJDPanel()">Show JD</button>
+                    <button id="btn-apply-open" class="btn btn-success btn-sm" onclick="handleApply()">Apply</button>
+                    <button class="btn btn-ghost btn-sm" onclick="collapseJobView()" title="Close">&times; Close</button>
+                </div>
+            </div>
+
+            <!-- Phase Sub-Navigation -->
+            <div class="expanded-phase-nav">
+                <button class="phase-btn active" data-phase="resume" onclick="switchJobPhase('resume')">
+                    Resume & Apply
+                </button>
+                <button class="phase-btn" data-phase="interview" onclick="switchJobPhase('interview')">
+                    Interview Prep
+                </button>
+                <button class="phase-btn" data-phase="notes" onclick="switchJobPhase('notes')">
+                    Notes & Log
+                </button>
+            </div>
+
+            <!-- Content area: JD panel + phase views side by side -->
+            <div class="expanded-content-row">
+                <!-- JD Side Panel -->
+                <div id="jd-panel" class="jd-panel" style="display:none;">
+                    <div class="jd-panel-header">
+                        <span class="jd-panel-title">Job Description</span>
+                        <div style="display:flex;gap:0.35rem;align-items:center;">
+                            <button id="btn-reformat-jd" class="btn btn-ghost btn-sm" onclick="reformatJD()" title="Reformat with AI">Reformat</button>
+                            <button class="btn btn-ghost btn-sm" onclick="toggleJDPanel()" title="Hide">&times;</button>
+                        </div>
+                    </div>
+                    <div id="jd-panel-content" class="jd-panel-body markdown-body">No job description loaded.</div>
+                </div>
+                <div id="jd-resize-handle" class="resize-handle-vertical" style="display:none;"></div>
+
+            <!-- Resume Phase -->
+            <div id="expanded-resume-view" class="expanded-body">
+                <!-- Resume Upload (shown when no resume exists) -->
+                <div id="expanded-resume-upload" style="display:none;">
+                    <div class="card">
+                        <h2>Upload Master Resume</h2>
+                        <p class="hint">Upload your resume as a .docx file. It will be parsed into editable sections.</p>
+                        <form onsubmit="handleResumeUpload(event)">
+                            <div class="form-row">
+                                <input type="file" id="resume-file" accept=".docx" class="input" required>
+                                <button type="submit" class="btn btn-primary">Upload & Parse</button>
+                            </div>
+                        </form>
+                    </div>
+                </div>
+
+                <!-- Resume Workspace -->
+                <div id="expanded-resume-workspace" style="display:none;">
+                    <div id="app-toolbar" class="app-toolbar">
+                        <button id="btn-analyze" class="btn btn-primary" onclick="handleAnalyze()">Analyze</button>
+                        <button id="btn-switch-resume" class="btn btn-ghost" onclick="showSwitchResumeModal()" style="display:none;">Switch Resume</button>
+                        <div class="export-dropdown">
+                            <button class="btn btn-ghost" onclick="toggleExportMenu(event)">Export &#9662;</button>
+                            <div id="export-menu" class="export-menu">
+                                <button onclick="handleExportDocx(); closeExportMenu()">Download .docx</button>
+                                <button onclick="handlePrintPDF(); closeExportMenu()">Print / PDF</button>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="two-panel">
+                        <div id="resume-display" class="panel-left">
+                            <div id="resume-sections-container"></div>
+                        </div>
+                        <div id="ai-feedback-panel" class="panel-right">
+                            <div class="empty-state">Click Analyze to get AI feedback.</div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Interview Phase (hidden by default) -->
+            <div id="expanded-interview-view" class="expanded-body" style="display:none;">
+                <!-- Timeline Bar -->
+                <div class="stage-timeline-bar">
+                    <div class="stage-timeline-scroll" id="stage-timeline-scroll">
+                        <div class="stage-timeline-nodes" id="stage-timeline-nodes">
+                            <!-- Rendered by JS (includes inline + Add node) -->
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Stage Detail + AI Coach -->
+                <div class="interview-two-col">
+                    <!-- Left: Stage Detail -->
+                    <div class="stage-detail-panel" id="stage-detail-panel">
+                        <div class="stage-detail-empty" id="stage-detail-empty">
+                            <div class="empty-state">Select a stage above or add your first interview stage.</div>
+                        </div>
+                        <div id="stage-detail-content" style="display:none;">
+                            <!-- Stage Header -->
+                            <div class="stage-header-row">
+                                <input type="text" id="stage-name-input" class="input input-inline stage-name-edit" placeholder="Stage name" onchange="handleStageNameChange()">
+                                <div class="stage-header-actions">
+                                    <button class="btn btn-ghost btn-sm" onclick="openCheatSheet()" title="Quick-reference cheat sheet for this stage">Cheat Sheet</button>
+                                    <select id="stage-status-select" class="input input-inline stage-status-picker" onchange="handleStageStatusChange()">
+                                        <option value="upcoming">Upcoming</option>
+                                        <option value="current">Current</option>
+                                        <option value="completed">Completed</option>
+                                    </select>
+                                    <button class="btn btn-ghost btn-sm btn-danger-hover" onclick="handleDeleteStage()" title="Delete this stage">Delete</button>
+                                </div>
+                            </div>
+
+                            <!-- Game Plan -->
+                            <div class="stage-section">
+                                <div class="section-header-row">
+                                    <h3 class="stage-section-title">Game Plan</h3>
+                                </div>
+                                <div class="quill-resize-wrapper" id="game-plan-resize">
+                                    <div id="stage-notes-editor"></div>
+                                    <div class="resize-handle" data-target="game-plan-resize"></div>
+                                </div>
+                            </div>
+
+                            <!-- Interviewer Intel -->
+                            <div class="stage-section collapsible-section" id="section-interviewer">
+                                <div class="section-header-row section-toggle" onclick="toggleSection('interviewer')">
+                                    <h3 class="stage-section-title"><span class="section-chevron" id="chevron-interviewer">&#x25B6;</span> Interviewer Intel</h3>
+                                </div>
+                                <div class="section-collapsible" id="body-interviewer" style="display:none;">
+                                    <div class="interviewer-fields">
+                                        <div class="form-row">
+                                            <input type="text" id="interviewer-name" class="input" placeholder="Interviewer name" onchange="saveInterviewerField()">
+                                            <input type="text" id="interviewer-role" class="input" placeholder="Their role / title" onchange="saveInterviewerField()">
+                                        </div>
+                                        <input type="url" id="interviewer-linkedin" class="input" placeholder="LinkedIn profile URL" onchange="saveInterviewerField()">
+                                        <div class="quill-resize-wrapper quill-mini" id="interviewer-notes-resize">
+                                            <div id="interviewer-notes-editor"></div>
+                                            <div class="resize-handle" data-target="interviewer-notes-resize"></div>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <!-- Questions to Ask -->
+                            <div class="stage-section collapsible-section" id="section-questions">
+                                <div class="section-header-row section-toggle" onclick="toggleSection('questions')">
+                                    <h3 class="stage-section-title"><span class="section-chevron" id="chevron-questions">&#x25B6;</span> Questions to Ask</h3>
+                                    <button class="btn btn-ghost btn-sm" onclick="event.stopPropagation();addQuestion()" title="Add a question">+</button>
+                                </div>
+                                <div class="section-collapsible" id="body-questions" style="display:none;">
+                                    <div id="questions-list" class="questions-list">
+                                        <div class="empty-state">No questions yet. Click + to add one.</div>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <!-- Assigned Stories -->
+                            <div class="stage-section collapsible-section" id="section-stories">
+                                <div class="section-header-row section-toggle" onclick="toggleSection('stories')">
+                                    <h3 class="stage-section-title"><span class="section-chevron" id="chevron-stories">&#x25BC;</span> Assigned Stories</h3>
+                                    <div class="stories-header-actions" onclick="event.stopPropagation()">
+                                        <div class="split-btn-group" id="copy-from-stage-group" style="display:none;">
+                                            <button class="btn btn-ghost btn-sm" onclick="toggleCopyFromStageMenu()" title="Copy stories from another stage">Copy from Stage &#x25BE;</button>
+                                            <div class="split-dropdown" id="copy-from-stage-menu" style="display:none;"></div>
+                                        </div>
+                                        <button class="btn btn-ghost btn-sm" onclick="openStoryPicker()" title="Add a story">+ Add Story</button>
+                                    </div>
+                                </div>
+                                <div class="section-collapsible" id="body-stories">
+                                    <div id="stage-assigned-stories" class="stage-assigned-stories">
+                                        <div class="empty-state">No stories assigned. Click "+ Add Story" to get started.</div>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <!-- Post-Interview Debrief (shown when status = completed) -->
+                            <div class="stage-section debrief-section" id="section-debrief" style="display:none;">
+                                <div class="section-header-row">
+                                    <h3 class="stage-section-title">Post-Interview Debrief</h3>
+                                </div>
+                                <div class="debrief-form">
+                                    <div class="debrief-rating-row">
+                                        <label class="debrief-label">How did it go?</label>
+                                        <div class="debrief-stars" id="debrief-stars">
+                                            <span class="debrief-star" data-rating="1" onclick="setDebriefRating(1)">&#x2605;</span>
+                                            <span class="debrief-star" data-rating="2" onclick="setDebriefRating(2)">&#x2605;</span>
+                                            <span class="debrief-star" data-rating="3" onclick="setDebriefRating(3)">&#x2605;</span>
+                                            <span class="debrief-star" data-rating="4" onclick="setDebriefRating(4)">&#x2605;</span>
+                                            <span class="debrief-star" data-rating="5" onclick="setDebriefRating(5)">&#x2605;</span>
+                                        </div>
+                                    </div>
+                                    <div class="debrief-field">
+                                        <label class="debrief-field-label">What went well?</label>
+                                        <div class="quill-resize-wrapper quill-mini" id="debrief-well-resize">
+                                            <div id="debrief-went-well-editor"></div>
+                                            <div class="resize-handle" data-target="debrief-well-resize"></div>
+                                        </div>
+                                    </div>
+                                    <div class="debrief-field">
+                                        <label class="debrief-field-label">What could improve for next round?</label>
+                                        <div class="quill-resize-wrapper quill-mini" id="debrief-improve-resize">
+                                            <div id="debrief-to-improve-editor"></div>
+                                            <div class="resize-handle" data-target="debrief-improve-resize"></div>
+                                        </div>
+                                    </div>
+                                    <div class="debrief-field">
+                                        <label class="debrief-field-label">Questions they asked (capture while fresh)</label>
+                                        <div class="quill-resize-wrapper quill-mini" id="debrief-questions-resize">
+                                            <div id="debrief-questions-asked-editor"></div>
+                                            <div class="resize-handle" data-target="debrief-questions-resize"></div>
+                                        </div>
+                                    </div>
+                                    <div class="debrief-field">
+                                        <label class="debrief-field-label">Follow-up needed? (thank you email, references, etc.)</label>
+                                        <div class="quill-resize-wrapper quill-mini" id="debrief-followup-resize">
+                                            <div id="debrief-followup-editor"></div>
+                                            <div class="resize-handle" data-target="debrief-followup-resize"></div>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Right: AI Prep Coach -->
+                    <div class="interview-coach-panel">
+                        <h2>AI Prep Coach</h2>
+                        <div class="coach-actions">
+                            <button class="btn btn-primary btn-sm" onclick="handleRecommendStories()">Rank Stories</button>
+                            <div class="prep-guide-split-btn">
+                                <button class="btn btn-ghost btn-sm prep-guide-main" onclick="handlePrepGuide('SAIL')">Prep Guide</button>
+                                <button class="btn btn-ghost btn-sm prep-guide-caret" onclick="togglePrepGuideMenu(event)" title="Choose framework">&#x25BE;</button>
+                                <div class="prep-guide-dropdown" id="prep-guide-dropdown" style="display:none;">
+                                    <button class="prep-guide-option" onclick="handlePrepGuide('SAIL')">SAIL</button>
+                                    <button class="prep-guide-option" onclick="handlePrepGuide('STARI')">STARI</button>
+                                    <button class="prep-guide-option" onclick="handlePrepGuide('STARFAQS')">STARFAQS</button>
+                                </div>
+                            </div>
+                        </div>
+                        <div id="interview-insights-feed" class="insights-feed">
+                            <div class="empty-state">Click Rank Stories or Prep Guide to get started.</div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Story Picker Modal -->
+            <div id="story-picker-overlay" class="story-picker-overlay" style="display:none;" onclick="if(event.target===this)closeStoryPicker()">
+                <div class="story-picker-modal">
+                    <div class="story-picker-header">
+                        <h3 id="story-picker-title">Add Stories to Stage</h3>
+                        <div class="story-picker-header-actions">
+                            <button class="btn btn-ghost btn-sm" id="picker-create-btn" onclick="showPickerCreateForm()">+ New Story</button>
+                            <button class="btn btn-ghost btn-sm" onclick="closeStoryPicker()">&times;</button>
+                        </div>
+                    </div>
+
+                    <!-- Browse existing stories (default view) -->
+                    <div id="story-picker-browse" class="story-picker-list">
+                        <div class="empty-state">Loading stories...</div>
+                    </div>
+
+                    <!-- Create new story form (hidden by default) -->
+                    <div id="story-picker-create" class="story-picker-create" style="display:none;">
+                        <div class="picker-create-form">
+                            <input type="text" id="picker-new-title" class="input" placeholder="Story title *">
+                            <input type="text" id="picker-new-hook" class="input" placeholder="One-line hook (optional)">
+                            <div class="quill-resize-wrapper" id="picker-new-content-resize" style="min-height:140px;">
+                                <div id="picker-new-content-editor"></div>
+                                <div class="resize-handle" data-target="picker-new-content-resize"></div>
+                            </div>
+                            <input type="text" id="picker-new-tags" class="input" placeholder="Tags (comma-separated, optional)">
+                            <input type="text" id="picker-new-company" class="input" placeholder="Company (optional)">
+                            <input type="text" id="picker-new-competency" class="input" placeholder="Competencies (comma-separated, optional)">
+                            <label class="picker-save-to-bank-label">
+                                <input type="checkbox" id="picker-save-to-bank" checked>
+                                <span>Also save to Story Bank for other interviews</span>
+                            </label>
+                            <div class="picker-create-actions">
+                                <button class="btn btn-primary btn-sm" onclick="handlePickerCreateStory()">Create &amp; Assign</button>
+                                <button class="btn btn-ghost btn-sm" onclick="hidePickerCreateForm()">Back to list</button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Cheat Sheet Modal -->
+            <div id="cheatsheet-overlay" class="story-picker-overlay" style="display:none;" onclick="if(event.target===this)closeCheatSheet()">
+                <div class="cheatsheet-modal">
+                    <div class="cheatsheet-header">
+                        <h3 id="cheatsheet-title">Cheat Sheet</h3>
+                        <div class="cheatsheet-header-actions">
+                            <button class="btn btn-ghost btn-sm" onclick="printCheatSheet()" title="Print / save as PDF">Print</button>
+                            <button class="btn btn-ghost btn-sm" onclick="closeCheatSheet()">&times;</button>
+                        </div>
+                    </div>
+                    <div id="cheatsheet-body" class="cheatsheet-body">
+                        <!-- Rendered by JS -->
+                    </div>
+                </div>
+            </div>
+
+            <!-- Notes Phase (hidden by default) -->
+            <div id="expanded-notes-view" class="expanded-body" style="display:none;">
+                <div class="card">
+                    <h2>Activity Log</h2>
+                    <div class="activity-add-form">
+                        <select id="activity-type-select" class="input input-inline" style="flex:0 0 auto;width:auto;">
+                            <option value="note">Note</option>
+                            <option value="call">Phone Call</option>
+                            <option value="email">Email</option>
+                            <option value="interview">Interview</option>
+                            <option value="update">Status Update</option>
+                        </select>
+                        <input type="text" id="activity-text-input" class="input" placeholder="What happened? (e.g. 'Recruiter reached out via LinkedIn')" onkeydown="if(event.key==='Enter')handleAddActivityEntry()">
+                        <button class="btn btn-primary btn-sm" onclick="handleAddActivityEntry()">Add</button>
+                    </div>
+                    <div id="activity-timeline" class="activity-timeline">
+                        <div class="empty-state">No activity logged yet.</div>
+                    </div>
+                </div>
+            </div>
+            </div><!-- /expanded-content-row -->
+        </div>
+    </div>
+
+    <!-- =================== IMPORT JOB MODAL =================== -->
+    <div id="import-job-overlay" class="job-quick-card-overlay" style="display:none;">
+        <div class="import-job-modal">
+            <div class="import-job-header">
+                <h2>Import Job</h2>
+                <button class="btn btn-ghost btn-sm" onclick="closeImportJobModal()" title="Close">&times;</button>
+            </div>
+
+            <!-- Tab switcher -->
+            <div class="import-tab-nav">
+                <button class="import-tab-btn active" data-import-tab="paste" onclick="switchImportTab('paste')">Paste JD</button>
+                <button class="import-tab-btn" data-import-tab="obsidian" onclick="switchImportTab('obsidian')">Import from Obsidian</button>
+                <button class="import-tab-btn" data-import-tab="scrape" onclick="switchImportTab('scrape')">Scrape URLs</button>
+            </div>
+
+            <!-- Paste Tab -->
+            <div id="import-tab-paste" class="import-tab-content active">
+                <div class="form-stack">
+                    <input type="text" id="import-title" class="input" placeholder="Job title *" required>
+                    <div class="form-row">
+                        <input type="text" id="import-company" class="input" placeholder="Company">
+                        <input type="text" id="import-location" class="input" placeholder="Location">
+                    </div>
+                    <div class="form-row">
+                        <input type="text" id="import-salary" class="input" placeholder="Salary">
+                        <input type="url" id="import-url" class="input" placeholder="Job URL (optional)">
+                    </div>
+                    <textarea id="import-description" class="input textarea" rows="12" placeholder="Paste the full job description here... *" required></textarea>
+                </div>
+                <div class="import-job-footer">
+                    <button class="btn btn-ghost" onclick="closeImportJobModal()">Cancel</button>
+                    <button class="btn btn-primary" onclick="handleImportJob()">Import Job</button>
+                </div>
+            </div>
+
+            <!-- Obsidian Tab -->
+            <div id="import-tab-obsidian" class="import-tab-content" style="display:none;">
+                <div id="obsidian-file-list" class="obsidian-file-list">
+                    <div class="empty-state">Loading Obsidian files...</div>
+                </div>
+                <div id="obsidian-preview" class="obsidian-preview" style="display:none;">
+                    <div class="obsidian-preview-header">
+                        <h3 id="obsidian-preview-title"></h3>
+                        <button class="btn btn-ghost btn-sm" onclick="hideObsidianPreview()">Back</button>
+                    </div>
+                    <div class="form-stack">
+                        <div class="form-row">
+                            <input type="text" id="obsidian-import-title" class="input" placeholder="Job title *">
+                            <input type="text" id="obsidian-import-company" class="input" placeholder="Company">
+                        </div>
+                        <div class="form-row">
+                            <input type="text" id="obsidian-import-location" class="input" placeholder="Location">
+                            <input type="url" id="obsidian-import-url" class="input" placeholder="Job URL">
+                        </div>
+                        <textarea id="obsidian-import-description" class="input textarea" rows="10" readonly></textarea>
+                    </div>
+                    <div class="import-job-footer">
+                        <button class="btn btn-ghost" onclick="hideObsidianPreview()">Back</button>
+                        <button class="btn btn-primary" onclick="handleImportFromObsidian()">Import This Job</button>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Scrape URLs Tab -->
+            <div id="import-tab-scrape" class="import-tab-content" style="display:none;">
+                <div class="form-stack">
+                    <p class="hint">Paste one job posting URL per line. Each URL should go directly to a job description page.</p>
+                    <textarea id="scrape-urls-input" class="input textarea" rows="8"
+                        placeholder="https://boards.greenhouse.io/company/jobs/12345&#10;https://www.linkedin.com/jobs/view/67890&#10;https://careers.company.com/jobs/software-engineer"></textarea>
+                    <div id="scrape-urls-results" style="display:none;"></div>
+                </div>
+                <div class="import-job-footer">
+                    <button class="btn btn-ghost" onclick="closeImportJobModal()">Cancel</button>
+                    <button id="scrape-urls-btn" class="btn btn-primary" onclick="handleScrapeUrls()">Scrape All</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Toast Container -->
+    <div id="toast-container" class="toast-container"></div>
+
+    <script src="/static/js/app.js"></script>
+    <script type="module" src="/static/js/editor.js"></script>
+</body>
+</html>
