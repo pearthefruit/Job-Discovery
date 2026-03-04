@@ -336,17 +336,19 @@
                 <div class="form-stack">
                     <input type="text" id="story-title" class="input" placeholder="Story title (e.g. 'Automation Initiative at Nestle')">
                     <input type="text" id="story-hook" class="input" placeholder="Hook - 1-2 sentence summary">
-                    <div class="quill-resize-wrapper" id="story-add-content-wrap" style="min-height:200px;">
-                        <div id="story-add-content-quill"></div>
-                        <div class="resize-handle" data-target="story-add-content-wrap"></div>
+                    <div class="story-meta-fields-row">
+                        <input type="text" id="story-company" class="input" placeholder="Company (e.g. Nestlé, OpenBrand, Syndigo)">
+                        <input type="text" id="story-tags" class="input" placeholder="Tags (comma-separated, e.g. leadership, data, product)">
                     </div>
-                    <input type="text" id="story-tags" class="input" placeholder="Tags (comma-separated, e.g. leadership, data, product)">
-                    <input type="text" id="story-company" class="input" placeholder="Company (e.g. Nestlé, OpenBrand, Syndigo)">
                     <div class="competency-input-group">
                         <label class="form-label-sm">Competencies</label>
                         <div id="story-competency-chips" class="competency-chip-container"></div>
                         <div class="competency-quick-picks" id="story-competency-picks"></div>
                         <input type="text" id="story-competency-input" class="input" placeholder="Add custom competency... (Enter to add)">
+                    </div>
+                    <div class="quill-resize-wrapper" id="story-add-content-wrap" style="min-height:200px;">
+                        <div id="story-add-content-quill"></div>
+                        <div class="resize-handle" data-target="story-add-content-wrap"></div>
                     </div>
                 </div>
                 <div class="form-row" style="margin-top:8px;">

@@ -1287,6 +1287,7 @@ select.input option {
 
 .resume-bank-card:hover {
     border-color: var(--border-glass-hover);
+    background: rgba(255, 255, 255, 0.04);
 }
 
 .resume-bank-name {
@@ -1429,13 +1430,42 @@ select.input option {
     opacity: 1;
 }
 
-.story-content-full {
+.story-content-full,
+.story-expanded {
     font-size: 0.8rem;
     color: var(--text-secondary);
     line-height: 1.6;
     padding: 0.65rem 0.85rem 0.85rem;
-    padding-left: 2.15rem; /* align with title text (chevron + gap) */
+    padding-left: 2.15rem;
     border-top: 1px solid var(--border-glass);
+}
+
+.story-inline-meta {
+    padding-bottom: 0.6rem;
+    margin-bottom: 0.6rem;
+    border-bottom: 1px solid var(--border-glass);
+    display: flex;
+    flex-direction: column;
+    gap: 0.4rem;
+}
+
+.story-inline-meta .competency-input-group {
+    gap: 0.25rem;
+}
+
+.input-inline {
+    background: transparent;
+    border-color: transparent;
+    padding: 0.3rem 0.5rem;
+    font-size: 0.8rem;
+    transition: border-color var(--transition), background var(--transition);
+}
+.input-inline:hover {
+    border-color: var(--border-glass);
+}
+.input-inline:focus {
+    background: var(--bg-glass);
+    border-color: var(--accent);
 }
 
 .story-edit-form {
@@ -1465,28 +1495,71 @@ select.input option {
     opacity: 1;
 }
 
-/* Company badge (amber) */
+/* Story header right section — keeps company + chips + actions in fixed columns */
+.story-header-right {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    flex-shrink: 0;
+}
+
+/* Story metadata — competency + tag chips */
+.story-meta-right {
+    display: flex;
+    gap: 0.3rem;
+    align-items: center;
+    flex-wrap: wrap;
+    justify-content: flex-end;
+    min-width: 0;
+}
+
+/* Story company column — fixed width so badges align across cards */
+.story-company-col {
+    width: 8rem;
+    flex-shrink: 0;
+    display: flex;
+    justify-content: flex-end;
+    align-items: center;
+}
+
+/* Company badge (amber) — visually distinct from chips */
 .company-badge {
     display: inline-flex;
     align-items: center;
-    padding: 0.15rem 0.45rem;
-    border-radius: 100px;
-    font-size: 0.65rem;
-    font-weight: 600;
-    background: rgba(251, 191, 36, 0.12);
+    gap: 0.3rem;
+    padding: 0.2rem 0.5rem 0.2rem 0.35rem;
+    border-radius: 6px;
+    font-size: 0.7rem;
+    font-weight: 700;
+    letter-spacing: 0.02em;
+    background: rgba(251, 191, 36, 0.1);
     color: #fbbf24;
-    border: 1px solid rgba(251, 191, 36, 0.2);
+    border: 1px solid rgba(251, 191, 36, 0.25);
     flex-shrink: 0;
     white-space: nowrap;
 }
+.company-badge svg {
+    flex-shrink: 0;
+    opacity: 0.7;
+}
 
-/* Story chips area (competencies + tags combined) */
+/* Story chips area (competencies + tags combined) — legacy, kept for other contexts */
 .story-chips-area {
     display: flex;
     gap: 0.3rem;
     align-items: center;
     flex-shrink: 0;
     flex-wrap: wrap;
+}
+
+/* Story metadata fields — company + tags side by side */
+.story-meta-fields-row {
+    display: flex;
+    gap: 0.5rem;
+}
+.story-meta-fields-row .input {
+    flex: 1;
+    min-width: 0;
 }
 
 /* =================== Competency Picker =================== */
@@ -1534,6 +1607,36 @@ select.input option {
 
 .competency-pick:hover {
     border-color: var(--border-glass-hover) !important;
+}
+
+/* Competency presets editor */
+.competency-edit-presets {
+    opacity: 0.5;
+    font-size: 0.75rem !important;
+}
+.competency-edit-presets:hover {
+    opacity: 1;
+}
+
+.presets-chip-list {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.35rem;
+}
+.preset-editable {
+    cursor: default;
+}
+.preset-editable button {
+    background: none;
+    border: none;
+    color: inherit;
+    cursor: pointer;
+    font-size: 0.8rem;
+    padding: 0 0 0 0.25rem;
+    opacity: 0.6;
+}
+.preset-editable button:hover {
+    opacity: 1;
 }
 
 /* =================== Story Group Headers =================== */

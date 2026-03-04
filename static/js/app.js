@@ -34,12 +34,24 @@ let collapsedStoryGroups = new Set();
 let _openStoryFilterColumn = null;
 let _storyFilterTimer = null;
 
-const COMPETENCY_PRESETS = [
+const DEFAULT_COMPETENCY_PRESETS = [
     'Leadership', 'Bias for Action', 'Resilience', 'Influence',
     'Decisions w/o Data', 'Customer Obsession', 'Ownership',
     'Deliver Results', 'Dive Deep', 'Earn Trust', 'Disagree & Commit',
-    'Strategic Thinking', 'Innovation', 'Collaboration'
+    'Strategic Thinking'
 ];
+
+function getCompetencyPresets() {
+    try {
+        const stored = localStorage.getItem('competencyPresets');
+        if (stored) return JSON.parse(stored);
+    } catch {}
+    return [...DEFAULT_COMPETENCY_PRESETS];
+}
+
+function saveCompetencyPresets(presets) {
+    localStorage.setItem('competencyPresets', JSON.stringify(presets));
+}
 
 // =================== Helpers ===================
 
@@ -2568,10 +2580,7 @@ function initCompetencyPicker(containerId, inputId, picksId) {
     const picksDiv = document.getElementById(picksId);
     if (!picksDiv) return;
 
-    // Render quick-pick buttons
-    picksDiv.innerHTML = COMPETENCY_PRESETS.map(c =>
-        `<button type="button" class="btn btn-ghost btn-xs competency-pick" data-comp="${escapeHtml(c)}" onclick="toggleCompetencyPick(this, '${containerId}')">${escapeHtml(c)}</button>`
-    ).join('');
+    renderCompetencyPicks(picksDiv, containerId);
 
     // Custom competency on Enter
     if (input) {
@@ -2587,6 +2596,96 @@ function initCompetencyPicker(containerId, inputId, picksId) {
             }
         };
     }
+}
+
+function renderCompetencyPicks(picksDiv, containerId) {
+    const presets = getCompetencyPresets();
+    picksDiv.innerHTML = presets.map(c =>
+        `<button type="button" class="btn btn-ghost btn-xs competency-pick" data-comp="${escapeHtml(c)}" onclick="toggleCompetencyPick(this, '${containerId}')">${escapeHtml(c)}</button>`
+    ).join('') + `<button type="button" class="btn btn-ghost btn-xs competency-edit-presets" onclick="openCompetencyPresetsEditor()" title="Edit presets">&#9881;</button>`;
+}
+
+function openCompetencyPresetsEditor() {
+    const existing = document.getElementById('competency-presets-overlay');
+    if (existing) existing.remove();
+
+    const presets = getCompetencyPresets();
+
+    const overlay = document.createElement('div');
+    overlay.id = 'competency-presets-overlay';
+    overlay.className = 'job-quick-card-overlay';
+    overlay.innerHTML = `
+        <div class="job-quick-card" style="max-width: min(500px, 92vw);">
+            <div class="job-quick-card-header">
+                <div><h2>Edit Competency Presets</h2></div>
+                <div class="job-quick-card-actions-top">
+                    <button class="btn btn-ghost btn-sm" onclick="closeCompetencyPresetsEditor()" title="Close">&times;</button>
+                </div>
+            </div>
+            <div class="job-quick-card-body" style="padding: 1rem;">
+                <p style="font-size:0.8rem; color:var(--text-muted); margin:0 0 0.75rem;">Click <strong>&times;</strong> to remove. Type below to add new ones.</p>
+                <div id="presets-chip-list" class="presets-chip-list">
+                    ${presets.map(c => `<span class="competency-chip chip-sm preset-editable">${escapeHtml(c)}<button onclick="removePresetChip(this)">&times;</button></span>`).join('')}
+                </div>
+                <div class="form-row" style="margin-top:0.75rem; gap:0.4rem;">
+                    <input type="text" id="new-preset-input" class="input" placeholder="New competency..." style="flex:1;" onkeydown="if(event.key==='Enter'){addPresetFromInput();}">
+                    <button class="btn btn-ghost btn-sm" onclick="addPresetFromInput()">Add</button>
+                </div>
+                <div class="form-row" style="margin-top:0.5rem; gap:0.4rem;">
+                    <button class="btn btn-ghost btn-sm" onclick="resetPresetsToDefault()">Reset to Defaults</button>
+                </div>
+            </div>
+        </div>
+    `;
+    document.body.appendChild(overlay);
+    requestAnimationFrame(() => overlay.classList.add('visible'));
+
+    overlay.addEventListener('click', (e) => { if (e.target === overlay) closeCompetencyPresetsEditor(); });
+    const esc = (e) => { if (e.key === 'Escape') { closeCompetencyPresetsEditor(); document.removeEventListener('keydown', esc); } };
+    document.addEventListener('keydown', esc);
+
+    document.getElementById('new-preset-input')?.focus();
+}
+
+function closeCompetencyPresetsEditor() {
+    const overlay = document.getElementById('competency-presets-overlay');
+    if (!overlay) return;
+    // Save current state from chips
+    const chips = overlay.querySelectorAll('.preset-editable');
+    const presets = [...chips].map(c => c.firstChild.textContent.trim()).filter(Boolean);
+    saveCompetencyPresets(presets);
+    overlay.classList.remove('visible');
+    setTimeout(() => overlay.remove(), 250);
+
+    // Refresh all visible competency pickers
+    document.querySelectorAll('.competency-quick-picks').forEach(picksDiv => {
+        const containerId = picksDiv.id.replace('-picks', '-chips').replace('inline-competency-picks', 'inline-competency-chips').replace('edit-competency-picks', 'edit-competency-chips').replace('story-competency-picks', 'story-competency-chips');
+        renderCompetencyPicks(picksDiv, containerId);
+    });
+}
+
+function removePresetChip(btn) {
+    btn.closest('.preset-editable').remove();
+}
+
+function addPresetFromInput() {
+    const input = document.getElementById('new-preset-input');
+    const val = (input?.value || '').trim();
+    if (!val) return;
+    const list = document.getElementById('presets-chip-list');
+    if (!list) return;
+    // Avoid duplicates
+    const existing = [...list.querySelectorAll('.preset-editable')].map(c => c.firstChild.textContent.trim().toLowerCase());
+    if (existing.includes(val.toLowerCase())) { showToast('Already exists', 'warning'); return; }
+    list.insertAdjacentHTML('beforeend', `<span class="competency-chip chip-sm preset-editable">${escapeHtml(val)}<button onclick="removePresetChip(this)">&times;</button></span>`);
+    input.value = '';
+    input.focus();
+}
+
+function resetPresetsToDefault() {
+    const list = document.getElementById('presets-chip-list');
+    if (!list) return;
+    list.innerHTML = DEFAULT_COMPETENCY_PRESETS.map(c => `<span class="competency-chip chip-sm preset-editable">${escapeHtml(c)}<button onclick="removePresetChip(this)">&times;</button></span>`).join('');
 }
 
 function toggleCompetencyPick(btn, containerId) {
@@ -2705,7 +2804,7 @@ function applyStoryFilters() {
 function renderStoryCard(story) {
     const contentHtml = story.content ? (looksLikeHtml(story.content) ? story.content : (looksLikeMarkdown(story.content) ? marked.parse(story.content) : `<p>${escapeHtml(story.content)}</p>`)) : '';
 
-    const companyBadge = story.company ? `<span class="company-badge">${escapeHtml(story.company)}</span>` : '';
+    const companyBadge = story.company ? `<span class="company-badge"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="2" width="16" height="20" rx="2"/><path d="M9 22v-4h6v4"/><path d="M8 6h.01M16 6h.01M12 6h.01M8 10h.01M16 10h.01M12 10h.01M8 14h.01M16 14h.01M12 14h.01"/></svg>${escapeHtml(story.company)}</span>` : '';
 
     const tagChips = story.tags ? story.tags.split(',').map(t =>
         `<span class="filter-chip chip-sm">${escapeHtml(t.trim())}</span>`).join('') : '';
@@ -2721,16 +2820,28 @@ function renderStoryCard(story) {
                 <h3>${escapeHtml(story.title)}</h3>
                 ${story.hook ? `<p class="story-hook">${escapeHtml(story.hook)}</p>` : ''}
             </div>
-            ${companyBadge}
-            <div class="story-chips-area">
-                ${competencyChips}${tagChips}
-            </div>
-            <div class="story-card-actions" onclick="event.stopPropagation()">
-                <button class="btn btn-ghost btn-sm" onclick="showEditStory(${story.id})">Edit</button>
-                <button class="btn btn-danger btn-sm" onclick="handleDeleteStory(${story.id})">Delete</button>
+            <div class="story-header-right">
+                <div class="story-meta-right">${competencyChips}${tagChips}</div>
+                <div class="story-company-col">${companyBadge}</div>
+                <div class="story-card-actions" onclick="event.stopPropagation()">
+                    <button class="btn btn-ghost btn-sm" onclick="showEditStory(${story.id})">Edit</button>
+                    <button class="btn btn-danger btn-sm" onclick="handleDeleteStory(${story.id})">Delete</button>
+                </div>
             </div>
         </div>
-        <div class="story-content-full" id="story-content-${story.id}" style="display:none;">
+        <div class="story-expanded" id="story-content-${story.id}" style="display:none;">
+            <div class="story-inline-meta" onclick="event.stopPropagation()">
+                <div class="story-meta-fields-row">
+                    <input type="text" class="input input-inline" id="inline-company-${story.id}" value="${escapeHtml(story.company || '')}" placeholder="Company" onblur="inlineStoryMetaSave(${story.id})" onkeydown="if(event.key==='Enter'){this.blur();}">
+                    <input type="text" class="input input-inline" id="inline-tags-${story.id}" value="${escapeHtml(story.tags || '')}" placeholder="Tags (comma-separated)" onblur="inlineStoryMetaSave(${story.id})" onkeydown="if(event.key==='Enter'){this.blur();}">
+                </div>
+                <div class="competency-input-group">
+                    <label class="form-label-sm">Competencies</label>
+                    <div id="inline-competency-chips-${story.id}" class="competency-chip-container"></div>
+                    <div class="competency-quick-picks" id="inline-competency-picks-${story.id}"></div>
+                    <input type="text" id="inline-competency-input-${story.id}" class="input input-inline" placeholder="Add competency... (Enter)" onkeydown="if(event.key==='Enter'){this.blur();}">
+                </div>
+            </div>
             <div class="markdown-body">${contentHtml}</div>
         </div>
         <div class="story-edit-form" id="story-edit-${story.id}" style="display:none;">
@@ -2740,14 +2851,6 @@ function renderStoryCard(story) {
                 <div class="quill-resize-wrapper" id="edit-content-wrap-${story.id}" style="min-height:200px;">
                     <div id="edit-content-quill-${story.id}"></div>
                     <div class="resize-handle" data-target="edit-content-wrap-${story.id}"></div>
-                </div>
-                <input type="text" class="input" id="edit-tags-${story.id}" value="${escapeHtml(story.tags || '')}" placeholder="Tags (comma-separated)">
-                <input type="text" class="input" id="edit-company-${story.id}" value="${escapeHtml(story.company || '')}" placeholder="Company">
-                <div class="competency-input-group">
-                    <label class="form-label-sm">Competencies</label>
-                    <div id="edit-competency-chips-${story.id}" class="competency-chip-container"></div>
-                    <div class="competency-quick-picks" id="edit-competency-picks-${story.id}"></div>
-                    <input type="text" id="edit-competency-input-${story.id}" class="input" placeholder="Add custom competency... (Enter to add)">
                 </div>
             </div>
             <div class="form-row" style="margin-top:8px;">
@@ -2919,6 +3022,26 @@ function toggleStoryContent(storyId) {
         el.style.display = 'block';
         if (chevron) chevron.style.transform = 'rotate(90deg)';
         if (card) card.classList.add('expanded');
+
+        // Initialize inline competency picker on first expand
+        const picksEl = document.getElementById(`inline-competency-picks-${storyId}`);
+        if (picksEl && !picksEl.dataset.init) {
+            picksEl.dataset.init = '1';
+            initCompetencyPicker(
+                `inline-competency-chips-${storyId}`,
+                `inline-competency-input-${storyId}`,
+                `inline-competency-picks-${storyId}`
+            );
+            const story = _storiesCache.find(s => s.id === storyId);
+            if (story) setCompetencyValues(`inline-competency-chips-${storyId}`, story.competency);
+
+            // Auto-save when competency changes (chip add/remove)
+            const chipsContainer = document.getElementById(`inline-competency-chips-${storyId}`);
+            if (chipsContainer) {
+                const observer = new MutationObserver(() => inlineStoryMetaSave(storyId));
+                observer.observe(chipsContainer, { childList: true });
+            }
+        }
     } else {
         el.style.display = 'none';
         if (chevron) chevron.style.transform = 'rotate(0deg)';
@@ -2941,16 +3064,6 @@ function showEditStory(storyId) {
         }
         _storyQuillEditors[storyId] = q;
         initResizeHandles();
-
-        // Initialize competency picker
-        initCompetencyPicker(
-            `edit-competency-chips-${storyId}`,
-            `edit-competency-input-${storyId}`,
-            `edit-competency-picks-${storyId}`
-        );
-        if (story) {
-            setCompetencyValues(`edit-competency-chips-${storyId}`, story.competency);
-        }
     }
 }
 
@@ -2963,16 +3076,13 @@ function hideEditStory(storyId) {
 async function handleSaveStoryEdit(storyId) {
     const title = document.getElementById(`edit-title-${storyId}`).value.trim();
     const hook = document.getElementById(`edit-hook-${storyId}`).value.trim();
-    const tags = document.getElementById(`edit-tags-${storyId}`).value.trim();
-    const company = document.getElementById(`edit-company-${storyId}`).value.trim();
-    const competency = getCompetencyValues(`edit-competency-chips-${storyId}`);
 
     // Read content from Quill editor
     const quill = _storyQuillEditors[storyId];
     const content = quill ? _getQuillHtml(quill) : '';
 
     if (!title) { showToast('Title is required', 'warning'); return; }
-    const result = await api.updateStory(storyId, { title, hook, content, tags, company, competency });
+    const result = await api.updateStory(storyId, { title, hook, content });
     if (result.error) {
         showToast(result.error, 'error');
     } else {
@@ -2981,6 +3091,57 @@ async function handleSaveStoryEdit(storyId) {
         const stories = await api.getStories();
         renderStories(stories);
     }
+}
+
+// Auto-save inline metadata (company, tags, competency) on blur/change
+let _inlineMetaSaveTimer = {};
+async function inlineStoryMetaSave(storyId) {
+    clearTimeout(_inlineMetaSaveTimer[storyId]);
+    _inlineMetaSaveTimer[storyId] = setTimeout(async () => {
+        const company = (document.getElementById(`inline-company-${storyId}`)?.value || '').trim();
+        const tags = (document.getElementById(`inline-tags-${storyId}`)?.value || '').trim();
+        const competency = getCompetencyValues(`inline-competency-chips-${storyId}`);
+
+        const story = _storiesCache.find(s => s.id === storyId);
+        if (!story) return;
+
+        // Only save if something changed
+        if (company === (story.company || '') && tags === (story.tags || '') && competency === (story.competency || '')) return;
+
+        const result = await api.updateStory(storyId, { company, tags, competency });
+        if (result.error) {
+            showToast(result.error, 'error');
+        } else {
+            // Update cache silently — no toast for inline saves, just refresh chips in header
+            story.company = company;
+            story.tags = tags;
+            story.competency = competency;
+
+            // Update header chips without re-rendering the whole list
+            const card = document.querySelector(`.story-card[data-story-id="${storyId}"]`);
+            if (card) {
+                // Update company column
+                const compCol = card.querySelector('.story-company-col');
+                if (compCol) compCol.innerHTML = company ? `<span class="company-badge"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="2" width="16" height="20" rx="2"/><path d="M9 22v-4h6v4"/><path d="M8 6h.01M16 6h.01M12 6h.01M8 10h.01M16 10h.01M12 10h.01M8 14h.01M16 14h.01M12 14h.01"/></svg>${escapeHtml(company)}</span>` : '';
+
+                // Update competency + tag chips
+                const metaRight = card.querySelector('.story-meta-right');
+                const tagChips = tags ? tags.split(',').map(t => `<span class="filter-chip chip-sm">${escapeHtml(t.trim())}</span>`).join('') : '';
+                const compChips = competency ? competency.split(',').map(c => `<span class="competency-chip chip-sm">${escapeHtml(c.trim())}</span>`).join('') : '';
+                const chipsHtml = compChips + tagChips;
+                if (chipsHtml) {
+                    if (metaRight) {
+                        metaRight.innerHTML = chipsHtml;
+                    } else {
+                        const actions = card.querySelector('.story-card-actions');
+                        if (actions) actions.insertAdjacentHTML('beforebegin', `<div class="story-meta-right">${chipsHtml}</div>`);
+                    }
+                } else if (metaRight) {
+                    metaRight.remove();
+                }
+            }
+        }
+    }, 300);
 }
 
 // Story UI toggles
@@ -3196,14 +3357,14 @@ function renderResumeBank(resumes) {
     }
     container.innerHTML = resumes.map(r => {
         const date = r.uploaded_at ? new Date(r.uploaded_at).toLocaleDateString() : '';
+        const safeName = escapeHtml(r.name).replace(/'/g, "\\'");
         return `
-        <div class="resume-bank-card" data-resume-id="${r.id}">
+        <div class="resume-bank-card" data-resume-id="${r.id}" onclick="openResumeCard(${r.id}, '${safeName}')" style="cursor:pointer;">
             <div class="resume-bank-info">
                 <h3 class="resume-bank-name">${escapeHtml(r.name)}</h3>
                 <span class="resume-bank-meta">${escapeHtml(r.original_filename || '')}${date ? ' \u2014 ' + date : ''}</span>
             </div>
-            <div class="resume-bank-actions">
-                <button class="btn btn-ghost btn-sm" onclick="openResumeCard(${r.id}, '${escapeHtml(r.name).replace(/'/g, "\\'")}')">View</button>
+            <div class="resume-bank-actions" onclick="event.stopPropagation()">
                 <button class="btn btn-ghost btn-sm" onclick="handleRenameResume(${r.id}, this)">Rename</button>
                 <button class="btn btn-danger btn-sm" onclick="handleDeleteResume(${r.id})">Delete</button>
             </div>
