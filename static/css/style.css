@@ -3664,6 +3664,38 @@ select.input option {
     max-width: 100%;
 }
 
+/* System event bubbles */
+.timeline-bubble.system-event {
+    background: rgba(255, 255, 255, 0.04);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    border-radius: 6px;
+    font-size: 0.72rem;
+    color: rgba(255, 255, 255, 0.55);
+    padding: 0.35rem 0.65rem;
+    max-width: 100%;
+}
+.timeline-bubble.system-event:hover {
+    background: rgba(255, 255, 255, 0.07);
+    border-color: rgba(255, 255, 255, 0.18);
+    box-shadow: none;
+    transform: none;
+}
+.timeline-bubble.system-event::before {
+    display: none;
+}
+.timeline-entry.system-entry::before {
+    background: rgba(255, 255, 255, 0.2);
+    box-shadow: 0 0 4px rgba(255, 255, 255, 0.1);
+    width: 6px;
+    height: 6px;
+    top: 10px;
+    left: -2px;
+}
+.system-icon {
+    font-size: 0.65rem;
+    margin-right: 0.15rem;
+}
+
 /* Status Hint Banner */
 .stage-status-hint {
     display: flex;

@@ -904,6 +904,7 @@ async function quickStatusChange(jobId, selectEl) {
     };
     if (statusActions[newStatus]) {
         await statusActions[newStatus]();
+        await logSystemEvent(jobId, `Status changed to ${newStatus}`);
         showToast(`Status → ${newStatus}`, 'success');
         refreshDiscovery();
     }
@@ -1633,6 +1634,7 @@ async function handleExpandedStatusChange(newStatus) {
 
     if (statusActions[newStatus]) {
         await statusActions[newStatus]();
+        logSystemEvent(expandedJobId, `Status changed to ${newStatus}`);
         expandedJobData.status = newStatus === 'applying' ? 'greenlighted' : newStatus;
         showToast(`Status updated to ${newStatus}`, 'success');
     }
@@ -2164,6 +2166,7 @@ async function handleApply() {
         await api.updateJobStatus(expandedJobId, 'applied');
     }
 
+    logSystemEvent(expandedJobId, 'Application submitted');
     showToast('Marked as Applied!', 'success');
     if (expandedJobData) {
         expandedJobData.status = 'applied';
@@ -2394,6 +2397,7 @@ async function confirmSwitchResume(appId, resumeId) {
         return;
     }
 
+    logSystemEvent(expandedJobId, 'Resume base switched');
     showToast('Resume base switched', 'success');
     await loadExpandedResumePhase(expandedJobId);
 }
@@ -3554,12 +3558,14 @@ function renderSidebarTimeline(entries) {
     timeline.innerHTML = sorted.map(entry => {
         const timeStr = entry.ts ? formatRelativeTime(entry.ts) : '';
         const dateStr = entry.ts ? new Date(entry.ts).toLocaleString() : '';
+        const isSystem = entry.type === 'system';
         const len = (entry.text || '').length;
-        const sizeClass = len <= 30 ? 'bubble-sm' : len <= 100 ? 'bubble-md' : 'bubble-lg';
+        const sizeClass = isSystem ? 'bubble-system' : (len <= 30 ? 'bubble-sm' : len <= 100 ? 'bubble-md' : 'bubble-lg');
+        const typeClass = isSystem ? 'system-event' : '';
         return `
-            <div class="timeline-entry">
-                <div class="timeline-bubble ${sizeClass}">
-                    ${escapeHtml(entry.text)}
+            <div class="timeline-entry ${isSystem ? 'system-entry' : ''}">
+                <div class="timeline-bubble ${sizeClass} ${typeClass}">
+                    ${isSystem ? '<span class="system-icon">\u26A1</span> ' : ''}${escapeHtml(entry.text)}
                     <div class="bubble-time" title="${dateStr}">${timeStr}</div>
                 </div>
             </div>
@@ -3593,6 +3599,20 @@ async function handleSidebarAddEntry() {
         await loadSidebarActivity(expandedJobId);
     } catch (e) {
         showToast('Failed to add entry', 'error');
+    }
+}
+
+// Auto-log system events for key lifecycle actions
+async function logSystemEvent(jobId, text) {
+    if (!jobId) return;
+    try {
+        await api.addActivityEntry(jobId, text, 'system');
+        // Refresh sidebar if it's open and showing this job
+        if (_sidebarOpen && expandedJobId === jobId) {
+            await loadSidebarActivity(jobId);
+        }
+    } catch (e) {
+        // Silent fail — don't block user actions for logging
     }
 }
 
@@ -3985,6 +4005,7 @@ async function handleAddStage() {
     try {
         const result = await api.addStage(expandedJobId, 'New Stage');
         if (result.error) { showToast(result.error, 'error'); return; }
+        logSystemEvent(expandedJobId, 'Interview stage added');
         const res = await api.getStages(expandedJobId);
         _stagesCache = res.stages || [];
         renderTimeline();
@@ -4021,7 +4042,9 @@ async function handleStageStatusChange() {
     try {
         await api.updateStage(expandedJobId, _selectedStageId, { status });
         const stage = _stagesCache.find(s => s.id === _selectedStageId);
+        const stageName = stage ? stage.name : 'Stage';
         if (stage) stage.status = status;
+        logSystemEvent(expandedJobId, `${stageName} → ${status}`);
         renderTimeline();
         updateStageSectionVisibility(status);
     } catch (e) {
@@ -5274,7 +5297,9 @@ function getLatestNoteText(notes) {
         if (Array.isArray(entries) && entries.length) {
             const latest = entries[entries.length - 1];
             const text = latest.text || '';
-            return text.length > 60 ? text.substring(0, 60) + '...' : text;
+            const prefix = latest.type === 'system' ? '\u26A1 ' : '';
+            const display = prefix + text;
+            return display.length > 60 ? display.substring(0, 60) + '...' : display;
         }
     } catch (e) {
         // Plain text notes
@@ -5765,6 +5790,7 @@ async function addMockInterview() {
         return;
     }
 
+    logSystemEvent(expandedJobId, 'Mock interview created');
     await loadMockInterviews(_selectedStageId);
     if (result.id) {
         _expandedMockId = result.id;
