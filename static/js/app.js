@@ -4849,7 +4849,7 @@ function renderAssignedStories() {
                         ).join('')}</div>` : ''}
                     </div>
                     <div class="assigned-story-body" id="story-body-${sid}">
-                        <div class="story-tiptap-wrapper" id="story-editor-${sid}"></div>
+                        <div class="story-tiptap-wrapper" id="story-editor-${sid}">${contentToHtml(story.custom_content || story.content || '') || '<em>No content</em>'}</div>
                     </div>
                 </div>
                 <div class="assigned-story-actions">
@@ -5030,6 +5030,12 @@ function toggleAssignedStoryContent(storyId) {
     const chevron = document.getElementById(`story-chevron-${storyId}`);
     if (!body) return;
     const isOpen = body.classList.contains('expanded');
+
+    // Lazy-init TipTap when expanding (before animation starts, while content is 0-height)
+    if (!isOpen && window.storyEditor) {
+        window.storyEditor.ensureEditor(storyId);
+    }
+
     body.classList.toggle('expanded');
     if (chevron) chevron.classList.toggle('expanded', !isOpen);
 

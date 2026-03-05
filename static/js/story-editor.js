@@ -2,11 +2,9 @@
  * TipTap Story Editor Module
  *
  * Multi-instance editor for interview stage stories.
- * Architecture mirrors the resume editor (editor.js):
- *   - One TipTap instance per story (always editable)
- *   - Shared toolbar above all stories
- *   - Auto-save on update with 1.5s debounce
- *   - No explicit Save/Cancel — just click and type
+ * Lazy initialization — editors are created only when a story is expanded,
+ * so tab switches are fast regardless of how many stories are assigned.
+ * Shared toolbar above all stories, auto-save on update with 1.5s debounce.
  *
  * Exposes window.storyEditor API for app.js integration.
  */
@@ -17,6 +15,7 @@ import Underline from 'https://esm.sh/@tiptap/extension-underline@2.11.5';
 import Link from 'https://esm.sh/@tiptap/extension-link@2.11.5';
 
 let editors = {};          // { storyId: Editor }
+let storyDataMap = {};     // { storyId: { htmlContent } } — for lazy init
 let activeEditor = null;   // { id, editor }
 let saveTimers = {};
 let _onSaveCallback = null;
@@ -144,7 +143,74 @@ function showSaveStatus(text, className) {
     }
 }
 
-// =================== Multi-Editor Init/Destroy ===================
+// =================== Lazy Editor Creation ===================
+
+function _createEditor(id) {
+    const data = storyDataMap[id];
+    if (!data) return null;
+    const wrapper = document.getElementById(`story-editor-${id}`);
+    if (!wrapper) return null;
+
+    // Clear static HTML placeholder before TipTap mounts
+    wrapper.innerHTML = '';
+
+    const editor = new Editor({
+        element: wrapper,
+        extensions: [
+            StarterKit.configure({ heading: { levels: [2, 3] } }),
+            Underline,
+            Link.configure({
+                openOnClick: false,
+                HTMLAttributes: { target: '_blank', rel: 'noopener' },
+            }),
+        ],
+        content: data.htmlContent || '',
+        onFocus() {
+            activeEditor = { id, editor };
+            updateToolbarState();
+            document.querySelectorAll('.assigned-story-card.story-editing')
+                .forEach(c => c.classList.remove('story-editing'));
+            const card = wrapper.closest('.assigned-story-card');
+            if (card) card.classList.add('story-editing');
+        },
+        onBlur() {
+            setTimeout(() => {
+                if (activeEditor && activeEditor.id === id && !editor.isFocused) {
+                    const card = wrapper.closest('.assigned-story-card');
+                    if (card) card.classList.remove('story-editing');
+                }
+            }, 150);
+        },
+        onUpdate() {
+            updateToolbarState();
+            showSaveStatus('Editing...', 'editing');
+            clearTimeout(saveTimers[id]);
+            saveTimers[id] = setTimeout(() => {
+                if (_onSaveCallback) {
+                    _onSaveCallback(id, editor.getHTML());
+                }
+            }, 1500);
+        },
+        onSelectionUpdate() {
+            updateToolbarState();
+        },
+    });
+
+    editors[id] = editor;
+    return editor;
+}
+
+/**
+ * Called when a story is expanded — creates the TipTap editor if not yet initialized.
+ * Since the grid animation takes 0.3s and TipTap init takes ~20ms, the editor is
+ * ready well before the content becomes visible.
+ */
+function ensureEditor(storyId) {
+    if (editors[storyId]) return;
+    _createEditor(storyId);
+}
+
+// =================== Init / Destroy ===================
 
 function initEditors(container, storyData, callbacks) {
     destroyEditors();
@@ -152,62 +218,14 @@ function initEditors(container, storyData, callbacks) {
 
     if (!storyData.length) return;
 
+    // Store data for lazy init — don't create editors yet
+    storyData.forEach(({ id, htmlContent }) => {
+        storyDataMap[id] = { htmlContent };
+    });
+
     // Create shared toolbar at top of container
     _toolbarEl = createToolbar();
     container.insertBefore(_toolbarEl, container.firstChild);
-
-    // Create one TipTap editor per story
-    storyData.forEach(({ id, htmlContent }) => {
-        const wrapper = document.getElementById(`story-editor-${id}`);
-        if (!wrapper) return;
-
-        const editor = new Editor({
-            element: wrapper,
-            extensions: [
-                StarterKit.configure({ heading: { levels: [2, 3] } }),
-                Underline,
-                Link.configure({
-                    openOnClick: false,
-                    HTMLAttributes: { target: '_blank', rel: 'noopener' },
-                }),
-            ],
-            content: htmlContent || '',
-            onFocus() {
-                activeEditor = { id, editor };
-                updateToolbarState();
-                // Highlight focused story card
-                document.querySelectorAll('.assigned-story-card.story-editing')
-                    .forEach(c => c.classList.remove('story-editing'));
-                const card = wrapper.closest('.assigned-story-card');
-                if (card) card.classList.add('story-editing');
-            },
-            onBlur() {
-                // Remove highlight after a short delay (allows toolbar clicks)
-                setTimeout(() => {
-                    if (activeEditor && activeEditor.id === id && !editor.isFocused) {
-                        const card = wrapper.closest('.assigned-story-card');
-                        if (card) card.classList.remove('story-editing');
-                    }
-                }, 150);
-            },
-            onUpdate() {
-                updateToolbarState();
-                showSaveStatus('Editing...', 'editing');
-                // Debounced auto-save
-                clearTimeout(saveTimers[id]);
-                saveTimers[id] = setTimeout(() => {
-                    if (_onSaveCallback) {
-                        _onSaveCallback(id, editor.getHTML());
-                    }
-                }, 1500);
-            },
-            onSelectionUpdate() {
-                updateToolbarState();
-            },
-        });
-
-        editors[id] = editor;
-    });
 }
 
 function destroyEditors() {
@@ -224,6 +242,7 @@ function destroyEditors() {
     // Destroy all editors
     Object.values(editors).forEach(e => e.destroy());
     editors = {};
+    storyDataMap = {};
     activeEditor = null;
 
     // Remove toolbar
@@ -241,7 +260,13 @@ function getHTML(storyId) {
 
 function setContent(storyId, html) {
     const editor = editors[storyId];
-    if (editor) editor.commands.setContent(html);
+    if (editor) {
+        editor.commands.setContent(html);
+    }
+    // Also update stored data so re-expand after reset works
+    if (storyDataMap[storyId]) {
+        storyDataMap[storyId].htmlContent = html;
+    }
 }
 
 // =================== Export ===================
@@ -249,6 +274,7 @@ function setContent(storyId, html) {
 window.storyEditor = {
     initEditors,
     destroyEditors,
+    ensureEditor,
     getHTML,
     setContent,
     showSaveStatus,
