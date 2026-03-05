@@ -5249,6 +5249,7 @@ select.input option {
 /* Story TipTap content (always editable, no border/chrome) */
 .story-tiptap-wrapper {
     min-height: 40px;
+    cursor: text;
 }
 
 .story-tiptap-wrapper .ProseMirror {
@@ -5258,6 +5259,7 @@ select.input option {
     font-size: 0.875rem;
     line-height: 1.7;
     color: var(--text-primary);
+    cursor: text;
 }
 
 .story-tiptap-wrapper .ProseMirror p { margin-bottom: 0.3rem; }

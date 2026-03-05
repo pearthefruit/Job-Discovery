@@ -5032,6 +5032,16 @@ function toggleAssignedStoryContent(storyId) {
     const isOpen = body.style.display !== 'none';
     body.style.display = isOpen ? 'none' : 'block';
     if (chevron) chevron.innerHTML = isOpen ? '&#x25B6;' : '&#x25BC;';
+
+    // When expanding, keep the header in view (expand downward, not upward)
+    if (!isOpen) {
+        const header = document.querySelector(`.assigned-story-card[data-story-id="${storyId}"] .assigned-story-header`);
+        if (header) {
+            requestAnimationFrame(() => {
+                header.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+            });
+        }
+    }
 }
 
 // ---- Story Picker Modal ----
