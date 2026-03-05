@@ -2166,7 +2166,8 @@ function renderScraperStatus(status) {
             document.getElementById('progress-text').textContent =
                 `Source ${run.current_source_index} of ${run.total_sources}` +
                 (run.current_source_name ? ` — ${run.current_source_name}` : '') +
-                ` | Found: ${run.jobs_found || 0} | New: ${run.jobs_new || 0}`;
+                ` | Found: ${run.jobs_found || 0} | New: ${run.jobs_new || 0}` +
+                ` | Filtered: ${run.jobs_filtered || 0} | Dupes: ${run.jobs_dupes || 0}`;
         }
 
         document.getElementById('activity-log-container').style.display = 'block';
@@ -2192,6 +2193,8 @@ function renderScraperStatus(status) {
                 <span>Last run: ${finishedAt}</span>
                 <span>Found: ${run.jobs_found}</span>
                 <span>New: ${run.jobs_new}</span>
+                <span>Filtered: ${run.jobs_filtered || 0}</span>
+                <span>Dupes: ${run.jobs_dupes || 0}</span>
                 ${run.errors ? `<span style="color:var(--danger)">Errors: ${escapeHtml(run.errors).substring(0, 200)}</span>` : ''}
             </div>`;
         }

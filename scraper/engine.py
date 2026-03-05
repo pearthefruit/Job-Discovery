@@ -40,6 +40,8 @@ class ScrapeEngine:
         scrapers = []
         jobs_found = 0
         jobs_new = 0
+        total_filtered = 0
+        total_dupes = 0
         errors = []
         status = 'failed'
 
@@ -112,20 +114,29 @@ class ScrapeEngine:
                                 errors.append(err)
                         else:
                             source_dupes += 1
+                            log.info(f"Dupe: {job.get('title', 'Untitled')} (already in DB)")
+
+                    total_dupes += source_dupes
 
                     # Save filtered-out jobs for manual review
-                    jobs_filtered_count = 0
+                    source_filtered = 0
+                    filtered_dupes = 0
                     for job in filtered:
                         if not job.get('url'):
                             continue
                         if not self.dedup.is_duplicate(job['url']):
                             try:
                                 self._save_filtered_job(job, source)
-                                jobs_filtered_count += 1
+                                source_filtered += 1
                             except Exception:
                                 pass
-                    if jobs_filtered_count:
-                        log.info(f"Saved {jobs_filtered_count} filtered job(s) for review from {source['company_name']}")
+                        else:
+                            filtered_dupes += 1
+                    total_filtered += source_filtered
+                    if source_filtered:
+                        log.info(f"Saved {source_filtered} filtered job(s) for review from {source['company_name']}")
+                    elif not filtered and discovered:
+                        log.info(f"No filtered jobs from {source['company_name']} — all matched or excluded")
 
                     if source_dupes > 0:
                         if source_dupes == len(discovered):
@@ -135,7 +146,8 @@ class ScrapeEngine:
 
                     # Update running totals
                     self.db.update_scrape_progress(
-                        run_id, source_num, source['company_name'], jobs_found, jobs_new
+                        run_id, source_num, source['company_name'], jobs_found, jobs_new,
+                        jobs_filtered=total_filtered, jobs_dupes=total_dupes,
                     )
 
                 except Exception as e:
@@ -145,7 +157,7 @@ class ScrapeEngine:
                     errors.append(error_msg)
 
             status = 'completed'
-            log.step(f"Scrape complete: {jobs_found} found, {jobs_new} new")
+            log.step(f"Scrape complete: {jobs_found} found, {jobs_new} new, {total_filtered} filtered, {total_dupes} dupes")
 
         except Exception as e:
             status = 'failed'
@@ -163,7 +175,8 @@ class ScrapeEngine:
             if run_id:
                 self.db.finish_scrape_run(
                     run_id, status, jobs_found, jobs_new,
-                    '; '.join(errors) if errors else None
+                    errors='; '.join(errors) if errors else None,
+                    jobs_filtered=total_filtered, jobs_dupes=total_dupes,
                 )
 
     def _save_job(self, job, source):

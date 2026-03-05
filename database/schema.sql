@@ -36,6 +36,8 @@ CREATE TABLE IF NOT EXISTS scrape_runs (
     status TEXT DEFAULT 'running',
     jobs_found INTEGER DEFAULT 0,
     jobs_new INTEGER DEFAULT 0,
+    jobs_filtered INTEGER DEFAULT 0,
+    jobs_dupes INTEGER DEFAULT 0,
     errors TEXT,
     total_sources INTEGER DEFAULT 0,
     current_source_index INTEGER DEFAULT 0,

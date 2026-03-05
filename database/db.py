@@ -60,6 +60,8 @@ class JobDiscoveryDB:
             ("stories", "company", "TEXT"),
             ("interview_stages", "whiteboard", "TEXT"),
             ("interview_stages", "live_notes", "TEXT"),
+            ("scrape_runs", "jobs_filtered", "INTEGER DEFAULT 0"),
+            ("scrape_runs", "jobs_dupes", "INTEGER DEFAULT 0"),
         ]
         with self.get_connection() as conn:
             for table, column, col_type in migrations:
@@ -373,15 +375,19 @@ class JobDiscoveryDB:
             )
 
     def update_scrape_progress(self, run_id, current_source_index, current_source_name,
-                               jobs_found=None, jobs_new=None):
+                               jobs_found=None, jobs_new=None,
+                               jobs_filtered=None, jobs_dupes=None):
         with self.get_connection() as conn:
             if jobs_found is not None and jobs_new is not None:
                 conn.execute(
                     """UPDATE scrape_runs
                        SET current_source_index = ?, current_source_name = ?,
-                           jobs_found = ?, jobs_new = ?
+                           jobs_found = ?, jobs_new = ?,
+                           jobs_filtered = COALESCE(?, jobs_filtered),
+                           jobs_dupes = COALESCE(?, jobs_dupes)
                        WHERE id = ?""",
-                    (current_source_index, current_source_name, jobs_found, jobs_new, run_id),
+                    (current_source_index, current_source_name, jobs_found, jobs_new,
+                     jobs_filtered, jobs_dupes, run_id),
                 )
             else:
                 conn.execute(
@@ -391,14 +397,16 @@ class JobDiscoveryDB:
                     (current_source_index, current_source_name, run_id),
                 )
 
-    def finish_scrape_run(self, run_id, status, jobs_found, jobs_new, errors=None):
+    def finish_scrape_run(self, run_id, status, jobs_found, jobs_new,
+                          errors=None, jobs_filtered=0, jobs_dupes=0):
         with self.get_connection() as conn:
             conn.execute(
                 """UPDATE scrape_runs
                    SET finished_at = CURRENT_TIMESTAMP, status = ?, jobs_found = ?,
-                       jobs_new = ?, errors = ?, current_source_name = NULL
+                       jobs_new = ?, jobs_filtered = ?, jobs_dupes = ?,
+                       errors = ?, current_source_name = NULL
                    WHERE id = ?""",
-                (status, jobs_found, jobs_new, errors, run_id),
+                (status, jobs_found, jobs_new, jobs_filtered, jobs_dupes, errors, run_id),
             )
 
     def get_latest_run(self):
