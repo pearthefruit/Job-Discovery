@@ -4840,7 +4840,7 @@ function renderAssignedStories() {
                 <div class="assigned-story-info">
                     <div class="assigned-story-header" onclick="toggleAssignedStoryContent(${sid})" style="cursor:pointer;">
                         <h4>
-                            <span class="story-expand-chevron" id="story-chevron-${sid}">&#x25B6;</span>
+                            <span class="story-expand-chevron" id="story-chevron-${sid}">&#x25B8;</span>
                             ${escapeHtml(story.title)}${hasCustom ? ' <span class="custom-badge">edited</span>' : ''}
                         </h4>
                         ${story.hook ? `<p class="story-hook-text">${escapeHtml(story.hook)}</p>` : ''}
@@ -4848,7 +4848,7 @@ function renderAssignedStories() {
                             `<span class="filter-chip chip-sm">${escapeHtml(t.trim())}</span>`
                         ).join('')}</div>` : ''}
                     </div>
-                    <div class="assigned-story-body" id="story-body-${sid}" style="display:none;">
+                    <div class="assigned-story-body" id="story-body-${sid}">
                         <div class="story-tiptap-wrapper" id="story-editor-${sid}"></div>
                     </div>
                 </div>
@@ -5029,17 +5029,17 @@ function toggleAssignedStoryContent(storyId) {
     const body = document.getElementById(`story-body-${storyId}`);
     const chevron = document.getElementById(`story-chevron-${storyId}`);
     if (!body) return;
-    const isOpen = body.style.display !== 'none';
-    body.style.display = isOpen ? 'none' : 'block';
-    if (chevron) chevron.innerHTML = isOpen ? '&#x25B6;' : '&#x25BC;';
+    const isOpen = body.classList.contains('expanded');
+    body.classList.toggle('expanded');
+    if (chevron) chevron.classList.toggle('expanded', !isOpen);
 
-    // When expanding, keep the header in view (expand downward, not upward)
+    // When expanding, keep the header in view after animation starts
     if (!isOpen) {
         const header = document.querySelector(`.assigned-story-card[data-story-id="${storyId}"] .assigned-story-header`);
         if (header) {
-            requestAnimationFrame(() => {
+            setTimeout(() => {
                 header.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
-            });
+            }, 50);
         }
     }
 }

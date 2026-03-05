@@ -5377,25 +5377,33 @@ select.input option {
 }
 
 .story-expand-chevron {
-    font-size: 0.55rem;
+    font-size: 0.7rem;
     display: inline-block;
     margin-right: 0.25rem;
     vertical-align: middle;
     color: var(--text-muted);
-    transition: transform 0.15s ease;
+    transition: transform 0.25s ease;
+}
+.story-expand-chevron.expanded {
+    transform: rotate(90deg);
 }
 
 .assigned-story-body {
+    display: grid;
+    grid-template-rows: 0fr;
+    transition: grid-template-rows 0.3s ease-out;
+}
+.assigned-story-body.expanded {
+    grid-template-rows: 1fr;
+}
+.assigned-story-body > * {
+    overflow: hidden;
+}
+/* Border separator only when expanded */
+.assigned-story-body.expanded > * {
     margin-top: 0.5rem;
     padding-top: 0.5rem;
     border-top: 1px solid var(--border-glass);
-}
-
-.assigned-story-body .markdown-body {
-    font-size: 0.8rem;
-    line-height: 1.6;
-    max-height: 400px;
-    overflow-y: auto;
 }
 
 .assigned-story-actions {
