@@ -4835,15 +4835,17 @@ function renderAssignedStories() {
                  ondragstart="handleAssignedStoryDragStart(event, ${sid})"
                  ondragend="handleAssignedStoryDragEnd()">
                 <span class="assigned-story-drag-handle" title="Drag to reorder">&#x2630;</span>
-                <div class="assigned-story-info" onclick="toggleAssignedStoryContent(${sid})" style="cursor:pointer;">
-                    <h4>
-                        <span class="story-expand-chevron" id="story-chevron-${sid}">&#x25B6;</span>
-                        ${escapeHtml(story.title)}${hasCustom ? ' <span class="custom-badge">edited</span>' : ''}
-                    </h4>
-                    ${story.hook ? `<p class="story-hook-text">${escapeHtml(story.hook)}</p>` : ''}
-                    ${story.tags ? `<div class="story-tags" style="margin-top:0.15rem;">${story.tags.split(',').map(t =>
-                        `<span class="filter-chip chip-sm">${escapeHtml(t.trim())}</span>`
-                    ).join('')}</div>` : ''}
+                <div class="assigned-story-info">
+                    <div class="assigned-story-header" onclick="toggleAssignedStoryContent(${sid})" style="cursor:pointer;">
+                        <h4>
+                            <span class="story-expand-chevron" id="story-chevron-${sid}">&#x25B6;</span>
+                            ${escapeHtml(story.title)}${hasCustom ? ' <span class="custom-badge">edited</span>' : ''}
+                        </h4>
+                        ${story.hook ? `<p class="story-hook-text">${escapeHtml(story.hook)}</p>` : ''}
+                        ${story.tags ? `<div class="story-tags" style="margin-top:0.15rem;">${story.tags.split(',').map(t =>
+                            `<span class="filter-chip chip-sm">${escapeHtml(t.trim())}</span>`
+                        ).join('')}</div>` : ''}
+                    </div>
                     <div class="assigned-story-body" id="story-body-${sid}" style="display:none;">
                         <div class="markdown-body">${displayContent ? (looksLikeMarkdown(displayContent) ? marked.parse(displayContent) : displayContent) : '<em>No content</em>'}</div>
                     </div>
@@ -5196,18 +5198,6 @@ function handleEditStoryForStage(storyId) {
     const htmlContent = contentToHtml(editContent);
 
     body.dataset.editing = 'true';
-    body.innerHTML = `
-        <div class="story-edit-label">Editing copy for this stage <span style="color:var(--text-muted);font-weight:400;">(original in Story Bank is unchanged)</span></div>
-        <div class="quill-resize-wrapper" id="story-edit-resize-${storyId}" style="min-height:200px;">
-            <div id="story-edit-quill-${storyId}"></div>
-            <div class="resize-handle" data-target="story-edit-resize-${storyId}"></div>
-        </div>
-        <div class="story-edit-actions">
-            <button class="btn btn-success btn-sm" onclick="saveStoryEditForStage(${storyId})">Save</button>
-            <button class="btn btn-ghost btn-sm" onclick="cancelStoryInlineEdit(${storyId})">Cancel</button>
-            ${story.custom_content ? `<button class="btn btn-ghost btn-sm btn-danger-hover" onclick="resetStoryToOriginal(${storyId})" title="Discard edits and revert to original">Reset to Original</button>` : ''}
-        </div>
-    `;
 
     // Switch Edit button to "Cancel"
     const editBtn = card.querySelector('.assigned-story-actions .btn:not(.btn-danger-hover):not(.btn-save-bank)');
@@ -5216,22 +5206,24 @@ function handleEditStoryForStage(storyId) {
         editBtn.title = 'Cancel editing';
     }
 
-    // Initialize Quill
-    _quillStoryEdit = initQuill(`story-edit-quill-${storyId}`, QUILL_FULL_TOOLBAR, 'Edit your story...');
-    if (_quillStoryEdit) {
-        // Use dangerouslyPasteHTML instead of innerHTML to preserve all content
-        _quillStoryEdit.clipboard.dangerouslyPasteHTML(htmlContent);
-        _quillStoryEdit.setSelection(_quillStoryEdit.getLength(), 0); // cursor at end
+    // Use TipTap story editor
+    if (window.storyEditor) {
+        window.storyEditor.init(storyId, body, htmlContent, {
+            hasCustomContent: !!story.custom_content,
+            onSave: (html) => saveStoryEditForStage(storyId, html),
+            onCancel: () => cancelStoryInlineEdit(storyId),
+            onReset: () => resetStoryToOriginal(storyId),
+        });
     }
-    _quillStoryEdit._storyId = storyId;
-    initResizeHandles();
 }
 
 function cancelStoryInlineEdit(storyId) {
-    _quillStoryEdit = null;
+    if (window.storyEditor) window.storyEditor.destroy();
+
     const body = document.getElementById(`story-body-${storyId}`);
     if (!body) return;
     delete body.dataset.editing;
+    body.classList.remove('story-editor-active');
 
     // Restore read-only content
     const story = _stageStoriesCache.find(s => (s.story_id || s.id) === storyId);
@@ -5249,20 +5241,26 @@ function cancelStoryInlineEdit(storyId) {
     }
 }
 
-async function saveStoryEditForStage(storyId) {
-    if (!expandedJobId || !_selectedStageId || !_quillStoryEdit) return;
+async function saveStoryEditForStage(storyId, html) {
+    if (!expandedJobId || !_selectedStageId) return;
 
-    const content = _getQuillHtml(_quillStoryEdit);
+    // Get content from storyEditor if not passed (inline save)
+    const content = html || (window.storyEditor ? window.storyEditor.getHTML() : '');
+    if (!content) return;
+
     try {
         await api.updateStageStoryContent(expandedJobId, _selectedStageId, storyId, content);
         // Update cache
         const story = _stageStoriesCache.find(s => (s.story_id || s.id) === storyId);
         if (story) story.custom_content = content;
-        _quillStoryEdit = null;
+
+        if (window.storyEditor) window.storyEditor.destroy();
+
         // Restore body to read-only with new content
         const body = document.getElementById(`story-body-${storyId}`);
         if (body) {
             delete body.dataset.editing;
+            body.classList.remove('story-editor-active');
             body.innerHTML = `<div class="markdown-body">${content}</div>`;
         }
         // Update "edited" badge on the card
@@ -5288,7 +5286,7 @@ async function resetStoryToOriginal(storyId) {
         await api.updateStageStoryContent(expandedJobId, _selectedStageId, storyId, null);
         const story = _stageStoriesCache.find(s => (s.story_id || s.id) === storyId);
         if (story) story.custom_content = null;
-        _quillStoryEdit = null;
+        if (window.storyEditor) window.storyEditor.destroy();
         renderAssignedStories();
         showToast('Reset to original', 'success');
     } catch (e) {

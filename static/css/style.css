@@ -5200,6 +5200,162 @@ select.input option {
     align-items: center;
 }
 
+/* =================== TipTap Story Editor =================== */
+
+.story-editor-active {
+    display: flex;
+    flex-direction: column;
+    gap: 0.4rem;
+}
+
+.story-editor-toolbar {
+    display: flex;
+    gap: 0.2rem;
+    padding: 0.4rem 0.5rem;
+    background: rgba(10, 10, 20, 0.92);
+    backdrop-filter: blur(12px);
+    border-radius: var(--radius-sm) var(--radius-sm) 0 0;
+    border: 1px solid var(--border-glass);
+    border-bottom: none;
+    flex-wrap: wrap;
+    align-items: center;
+}
+
+.story-editor-toolbar button {
+    padding: 0.3rem 0.5rem;
+    background: transparent;
+    border: 1px solid transparent;
+    border-radius: 4px;
+    color: var(--text-secondary);
+    cursor: pointer;
+    font-size: 0.78rem;
+    font-family: var(--font);
+    transition: all var(--transition);
+}
+
+.story-editor-toolbar button:hover {
+    background: rgba(255, 255, 255, 0.06);
+    color: var(--text-primary);
+}
+
+.story-editor-toolbar button.is-active {
+    background: rgba(108, 99, 255, 0.15);
+    color: var(--accent);
+    border-color: rgba(108, 99, 255, 0.3);
+}
+
+.story-editor-toolbar .divider {
+    width: 1px;
+    height: 18px;
+    background: var(--border-glass);
+    margin: 0 0.2rem;
+}
+
+.story-editor-expand-btn {
+    margin-left: auto !important;
+    font-size: 0.9rem !important;
+    opacity: 0.6;
+}
+.story-editor-expand-btn:hover {
+    opacity: 1;
+}
+
+.story-tiptap-wrapper {
+    border: 1px solid var(--border-glass);
+    border-top: none;
+    border-radius: 0 0 var(--radius-sm) var(--radius-sm);
+    background: rgba(0, 0, 0, 0.2);
+    min-height: 200px;
+}
+
+.story-tiptap-wrapper .ProseMirror {
+    outline: none;
+    padding: 0.6rem 0.75rem;
+    min-height: 200px;
+    font-size: 0.875rem;
+    line-height: 1.7;
+    color: var(--text-primary);
+}
+
+.story-tiptap-wrapper .ProseMirror p { margin-bottom: 0.3rem; }
+.story-tiptap-wrapper .ProseMirror ul,
+.story-tiptap-wrapper .ProseMirror ol { margin: 0.25rem 0; padding-left: 1.25rem; }
+.story-tiptap-wrapper .ProseMirror li { margin-bottom: 0.2rem; }
+.story-tiptap-wrapper .ProseMirror h2 { font-size: 1.05rem; font-weight: 600; margin: 0.5rem 0 0.35rem; }
+.story-tiptap-wrapper .ProseMirror h3 { font-size: 0.95rem; font-weight: 600; margin: 0.35rem 0 0.25rem; }
+.story-tiptap-wrapper .ProseMirror strong { font-weight: 600; }
+.story-tiptap-wrapper .ProseMirror a { color: var(--accent); text-decoration: underline; }
+
+/* ---- Story Editor Modal ---- */
+
+.story-editor-modal-overlay {
+    position: fixed;
+    top: 0; left: 0; right: 0; bottom: 0;
+    background: rgba(0, 0, 0, 0.7);
+    backdrop-filter: blur(4px);
+    z-index: 9999;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    opacity: 0;
+    transition: opacity 0.2s;
+}
+.story-editor-modal-overlay.visible { opacity: 1; }
+
+.story-editor-modal {
+    width: min(900px, 94vw);
+    max-height: 90vh;
+    background: var(--bg-card);
+    border: 1px solid var(--border-glass);
+    border-radius: var(--radius);
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+    transform: scale(0.95);
+    transition: transform 0.2s;
+}
+.story-editor-modal-overlay.visible .story-editor-modal { transform: scale(1); }
+
+.story-editor-modal-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 0.75rem 1rem;
+    border-bottom: 1px solid var(--border-glass);
+}
+.story-editor-modal-header h3 { margin: 0; font-size: 1rem; }
+
+.story-editor-modal-toolbar {
+    border-bottom: 1px solid var(--border-glass);
+}
+.story-editor-modal-toolbar .story-editor-toolbar {
+    border: none;
+    border-radius: 0;
+}
+
+.story-editor-modal-body {
+    flex: 1;
+    overflow-y: auto;
+    min-height: 300px;
+}
+
+.story-tiptap-modal {
+    border: none !important;
+    border-radius: 0 !important;
+    min-height: 100%;
+}
+.story-tiptap-modal .ProseMirror {
+    min-height: 400px;
+    padding: 1rem 1.25rem;
+}
+
+.story-editor-modal-footer {
+    display: flex;
+    gap: 0.5rem;
+    padding: 0.75rem 1rem;
+    border-top: 1px solid var(--border-glass);
+}
+
 /* Custom content badge */
 .custom-badge {
     font-size: 0.6rem;
