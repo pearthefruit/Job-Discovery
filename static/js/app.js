@@ -4852,7 +4852,6 @@ function renderAssignedStories() {
                 </div>
                 <div class="assigned-story-actions">
                     ${story.stage_only ? `<button class="btn btn-ghost btn-sm btn-save-bank" onclick="event.stopPropagation();handlePromoteToBank(${sid})" title="Save to Story Bank for other interviews">Save to Bank</button>` : ''}
-                    <button class="btn btn-ghost btn-sm" onclick="event.stopPropagation();handleEditStoryForStage(${sid})" title="Edit this copy">Edit</button>
                     <button class="btn btn-ghost btn-sm btn-danger-hover" onclick="event.stopPropagation();handleRemoveStoryFromStage(${sid})" title="Remove">&times;</button>
                 </div>
             </div>
@@ -4861,6 +4860,22 @@ function renderAssignedStories() {
 
     // Setup drop zone for stories from picker
     setupAssignedStoriesDropZone();
+
+    // Click-to-edit: event delegation on container (persists across re-renders)
+    if (!container._storyEditDelegated) {
+        container._storyEditDelegated = true;
+        container.addEventListener('click', (e) => {
+            const mdBody = e.target.closest('.assigned-story-body .markdown-body');
+            if (!mdBody) return;
+            if (e.target.closest('a')) return; // allow link clicks
+            const storyBody = mdBody.closest('.assigned-story-body');
+            if (storyBody && storyBody.dataset.editing === 'true') return;
+            const card = mdBody.closest('.assigned-story-card');
+            if (!card) return;
+            const storyId = parseInt(card.dataset.storyId);
+            if (storyId) handleEditStoryForStage(storyId);
+        });
+    }
 }
 
 let _draggedAssignedStoryId = null;
@@ -5172,41 +5187,21 @@ async function handlePickerCreateStory() {
 // ---- Edit Story Copy for Stage ----
 
 function handleEditStoryForStage(storyId) {
-    const card = document.querySelector(`.assigned-story-card[data-story-id="${storyId}"]`);
-    if (!card) return;
-
     const body = document.getElementById(`story-body-${storyId}`);
-    const chevron = document.getElementById(`story-chevron-${storyId}`);
-    if (!body) return;
+    if (!body || body.dataset.editing === 'true') return;
 
-    // If already in edit mode, cancel
-    if (body.dataset.editing === 'true') {
-        cancelStoryInlineEdit(storyId);
-        return;
-    }
-
-    // Get story data from cache
     const story = _stageStoriesCache.find(s => (s.story_id || s.id) === storyId);
     if (!story) return;
 
-    // Expand body if collapsed
+    // Body should already be expanded (user clicked on it), but ensure
+    const chevron = document.getElementById(`story-chevron-${storyId}`);
     body.style.display = 'block';
     if (chevron) chevron.innerHTML = '&#x25BC;';
 
-    // Use custom_content if set, otherwise fall back to original
     const editContent = story.custom_content || story.content || '';
     const htmlContent = contentToHtml(editContent);
-
     body.dataset.editing = 'true';
 
-    // Switch Edit button to "Cancel"
-    const editBtn = card.querySelector('.assigned-story-actions .btn:not(.btn-danger-hover):not(.btn-save-bank)');
-    if (editBtn && editBtn.textContent.trim() === 'Edit') {
-        editBtn.textContent = 'Cancel';
-        editBtn.title = 'Cancel editing';
-    }
-
-    // Use TipTap story editor
     if (window.storyEditor) {
         window.storyEditor.init(storyId, body, htmlContent, {
             hasCustomContent: !!story.custom_content,
@@ -5229,16 +5224,6 @@ function cancelStoryInlineEdit(storyId) {
     const story = _stageStoriesCache.find(s => (s.story_id || s.id) === storyId);
     const displayContent = story ? (story.custom_content || story.content || '') : '';
     body.innerHTML = `<div class="markdown-body">${displayContent ? (looksLikeMarkdown(displayContent) ? marked.parse(displayContent) : displayContent) : '<em>No content</em>'}</div>`;
-
-    // Restore Edit button text
-    const card = document.querySelector(`.assigned-story-card[data-story-id="${storyId}"]`);
-    if (card) {
-        const editBtn = card.querySelector('.assigned-story-actions .btn:not(.btn-danger-hover):not(.btn-save-bank)');
-        if (editBtn && editBtn.textContent.trim() === 'Cancel') {
-            editBtn.textContent = 'Edit';
-            editBtn.title = 'Edit this copy';
-        }
-    }
 }
 
 async function saveStoryEditForStage(storyId, html) {
@@ -5271,10 +5256,8 @@ async function saveStoryEditForStage(storyId, html) {
             if (titleEl && !titleEl.querySelector('.custom-badge')) {
                 titleEl.insertAdjacentHTML('beforeend', ' <span class="custom-badge">edited</span>');
             }
-            const editBtn = card.querySelector('.assigned-story-actions .btn:not(.btn-danger-hover):not(.btn-save-bank)');
-            if (editBtn) { editBtn.textContent = 'Edit'; editBtn.title = 'Edit this copy'; }
         }
-        showToast('Story copy saved', 'success');
+        showToast('Story saved', 'success');
     } catch (e) {
         showToast('Failed to save', 'error');
     }

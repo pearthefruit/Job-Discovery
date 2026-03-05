@@ -1,8 +1,9 @@
 /**
  * TipTap Story Editor Module
  *
- * Lightweight inline editor for interview stage stories.
- * Supports inline editing within the story card + expand-to-modal.
+ * Click-to-edit inline editor for interview stage stories.
+ * Auto-saves on blur — no explicit Save/Cancel needed.
+ * Supports expand-to-modal for more editing space.
  * Exposes window.storyEditor API for app.js integration.
  */
 
@@ -17,10 +18,11 @@ let onSaveCallback = null;
 let onCancelCallback = null;
 let saveTimer = null;
 let isModalMode = false;
+let _hasChanges = false;
 
 // =================== Toolbar ===================
 
-function createToolbar(containerId) {
+function createToolbar(containerId, options = {}) {
     const toolbar = document.createElement('div');
     toolbar.className = 'story-editor-toolbar';
     toolbar.id = `story-toolbar-${containerId}`;
@@ -53,11 +55,29 @@ function createToolbar(containerId) {
         btn.dataset.cmd = item.cmd;
         if (item.style) btn.setAttribute('style', item.style);
         btn.addEventListener('mousedown', (e) => {
-            e.preventDefault(); // prevent focus loss
+            e.preventDefault();
             runCommand(item.cmd);
         });
         toolbar.appendChild(btn);
     });
+
+    // Reset button (only if story has custom/edited content)
+    if (options.hasCustomContent && options.onReset) {
+        const sep = document.createElement('span');
+        sep.className = 'divider';
+        toolbar.appendChild(sep);
+
+        const resetBtn = document.createElement('button');
+        resetBtn.type = 'button';
+        resetBtn.className = 'story-editor-reset-btn';
+        resetBtn.title = 'Reset to original';
+        resetBtn.innerHTML = '&#x21BA;';
+        resetBtn.addEventListener('mousedown', (e) => {
+            e.preventDefault();
+            options.onReset();
+        });
+        toolbar.appendChild(resetBtn);
+    }
 
     // Expand button (right-aligned)
     const expandBtn = document.createElement('button');
@@ -139,40 +159,23 @@ function init(storyId, containerEl, htmlContent, callbacks) {
     currentStoryId = storyId;
     onSaveCallback = callbacks.onSave || null;
     onCancelCallback = callbacks.onCancel || null;
+    _hasChanges = false;
 
-    // Build editor UI
+    // Build editor UI — toolbar + editable content, no buttons
     containerEl.innerHTML = '';
     containerEl.classList.add('story-editor-active');
 
-    // Label
-    const label = document.createElement('div');
-    label.className = 'story-edit-label';
-    label.innerHTML = 'Editing copy for this stage <span style="color:var(--text-muted);font-weight:400;">(original in Story Bank is unchanged)</span>';
-    containerEl.appendChild(label);
-
-    // Toolbar
-    const toolbar = createToolbar(storyId);
+    // Toolbar (slides in via CSS animation)
+    const toolbar = createToolbar(storyId, {
+        hasCustomContent: callbacks.hasCustomContent,
+        onReset: callbacks.onReset,
+    });
     containerEl.appendChild(toolbar);
 
     // Editor mount
     const editorEl = document.createElement('div');
     editorEl.className = 'story-tiptap-wrapper';
     containerEl.appendChild(editorEl);
-
-    // Action buttons
-    const actions = document.createElement('div');
-    actions.className = 'story-edit-actions';
-    actions.innerHTML = `
-        <button type="button" class="btn btn-success btn-sm story-editor-save">Save</button>
-        <button type="button" class="btn btn-ghost btn-sm story-editor-cancel">Cancel</button>
-        ${callbacks.hasCustomContent ? '<button type="button" class="btn btn-ghost btn-sm btn-danger-hover story-editor-reset">Reset to Original</button>' : ''}
-    `;
-    containerEl.appendChild(actions);
-
-    actions.querySelector('.story-editor-save').addEventListener('click', handleSave);
-    actions.querySelector('.story-editor-cancel').addEventListener('click', handleCancel);
-    const resetBtn = actions.querySelector('.story-editor-reset');
-    if (resetBtn) resetBtn.addEventListener('click', () => callbacks.onReset && callbacks.onReset());
 
     // Create TipTap instance
     currentEditor = new Editor({
@@ -187,14 +190,28 @@ function init(storyId, containerEl, htmlContent, callbacks) {
         ],
         content: htmlContent || '',
         onSelectionUpdate() { updateToolbarState(); },
-        onUpdate() { updateToolbarState(); },
+        onUpdate() {
+            updateToolbarState();
+            _hasChanges = true;
+        },
+        onBlur() {
+            // Auto-save when focus leaves the editor
+            // Toolbar buttons use mousedown+preventDefault so they don't trigger blur
+            if (isModalMode) return;
+            clearTimeout(saveTimer);
+            saveTimer = setTimeout(() => {
+                if (!currentEditor || isModalMode) return;
+                handleAutoSave();
+            }, 200);
+        },
     });
 
-    // Focus editor
-    setTimeout(() => currentEditor && currentEditor.commands.focus('end'), 50);
+    // Focus at start — NOT end — to avoid scrolling to bottom
+    setTimeout(() => currentEditor && currentEditor.commands.focus('start'), 50);
 }
 
 function destroy() {
+    clearTimeout(saveTimer);
     if (currentEditor) {
         currentEditor.destroy();
         currentEditor = null;
@@ -203,6 +220,7 @@ function destroy() {
     onSaveCallback = null;
     onCancelCallback = null;
     isModalMode = false;
+    _hasChanges = false;
 
     // Clean up modal if open
     const modal = document.getElementById('story-editor-modal');
@@ -213,6 +231,14 @@ function getHTML() {
     return currentEditor ? currentEditor.getHTML() : '';
 }
 
+function handleAutoSave() {
+    if (_hasChanges && onSaveCallback) {
+        onSaveCallback(getHTML());
+    } else if (onCancelCallback) {
+        onCancelCallback();
+    }
+}
+
 function handleSave() {
     if (onSaveCallback) onSaveCallback(getHTML());
     if (isModalMode) closeModal();
@@ -221,7 +247,6 @@ function handleSave() {
 function handleCancel() {
     if (isModalMode) {
         closeModal();
-        // Restore inline view
         if (onCancelCallback) onCancelCallback();
     } else {
         if (onCancelCallback) onCancelCallback();
@@ -232,11 +257,11 @@ function handleCancel() {
 
 function expandToModal() {
     if (!currentEditor) return;
+    clearTimeout(saveTimer); // cancel any pending auto-save
     isModalMode = true;
 
     // Capture current content
     const html = getHTML();
-    const storyId = currentStoryId;
 
     // Create modal overlay
     const modal = document.createElement('div');
@@ -269,7 +294,7 @@ function expandToModal() {
 
     // Mount toolbar in modal
     const toolbar = createToolbar('modal');
-    // Hide the expand button in modal
+    // Hide the expand button in modal (already expanded)
     const expandBtn = toolbar.querySelector('.story-editor-expand-btn');
     if (expandBtn) expandBtn.style.display = 'none';
     document.getElementById('story-modal-toolbar-mount').appendChild(toolbar);

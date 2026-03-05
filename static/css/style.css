@@ -5186,26 +5186,22 @@ select.input option {
     gap: 0.5rem;
 }
 
-.story-edit-label {
-    font-size: 0.7rem;
-    font-weight: 600;
-    text-transform: uppercase;
-    letter-spacing: 0.05em;
-    color: var(--accent);
-}
-
-.story-edit-actions {
-    display: flex;
-    gap: 0.5rem;
-    align-items: center;
-}
-
 /* =================== TipTap Story Editor =================== */
+
+/* Click-to-edit hint */
+.assigned-story-body .markdown-body {
+    cursor: text;
+    border-radius: var(--radius-sm);
+    transition: background 0.15s;
+}
+.assigned-story-body .markdown-body:hover {
+    background: rgba(255, 255, 255, 0.02);
+}
 
 .story-editor-active {
     display: flex;
     flex-direction: column;
-    gap: 0.4rem;
+    gap: 0;
 }
 
 .story-editor-toolbar {
@@ -5219,6 +5215,11 @@ select.input option {
     border-bottom: none;
     flex-wrap: wrap;
     align-items: center;
+    animation: story-toolbar-in 0.15s ease-out;
+}
+@keyframes story-toolbar-in {
+    from { opacity: 0; transform: translateY(-6px); }
+    to { opacity: 1; transform: translateY(0); }
 }
 
 .story-editor-toolbar button {
@@ -5258,6 +5259,15 @@ select.input option {
 }
 .story-editor-expand-btn:hover {
     opacity: 1;
+}
+
+.story-editor-reset-btn {
+    opacity: 0.6;
+    font-size: 0.9rem !important;
+}
+.story-editor-reset-btn:hover {
+    opacity: 1;
+    color: var(--danger) !important;
 }
 
 .story-tiptap-wrapper {
