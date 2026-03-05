@@ -4819,6 +4819,9 @@ function renderAssignedStories() {
     const container = document.getElementById('stage-assigned-stories');
     if (!container) return;
 
+    // Destroy previous TipTap editors before rebuilding
+    if (window.storyEditor) window.storyEditor.destroyEditors();
+
     if (!_stageStoriesCache.length) {
         container.innerHTML = '<div class="empty-state">No stories assigned. Click "+ Add Story" to get started.</div>';
         setupAssignedStoriesDropZone();
@@ -4828,7 +4831,6 @@ function renderAssignedStories() {
     container.innerHTML = _stageStoriesCache.map(story => {
         const sid = story.story_id || story.id;
         const hasCustom = !!story.custom_content;
-        const displayContent = story.custom_content || story.content || '';
 
         return `
             <div class="assigned-story-card ${hasCustom ? 'has-custom-content' : ''}" data-story-id="${sid}" draggable="true"
@@ -4847,11 +4849,12 @@ function renderAssignedStories() {
                         ).join('')}</div>` : ''}
                     </div>
                     <div class="assigned-story-body" id="story-body-${sid}" style="display:none;">
-                        <div class="markdown-body">${displayContent ? (looksLikeMarkdown(displayContent) ? marked.parse(displayContent) : displayContent) : '<em>No content</em>'}</div>
+                        <div class="story-tiptap-wrapper" id="story-editor-${sid}"></div>
                     </div>
                 </div>
                 <div class="assigned-story-actions">
                     ${story.stage_only ? `<button class="btn btn-ghost btn-sm btn-save-bank" onclick="event.stopPropagation();handlePromoteToBank(${sid})" title="Save to Story Bank for other interviews">Save to Bank</button>` : ''}
+                    ${hasCustom ? `<button class="btn btn-ghost btn-sm story-reset-btn" onclick="event.stopPropagation();resetStoryToOriginal(${sid})" title="Reset to original">&#x21BA;</button>` : ''}
                     <button class="btn btn-ghost btn-sm btn-danger-hover" onclick="event.stopPropagation();handleRemoveStoryFromStage(${sid})" title="Remove">&times;</button>
                 </div>
             </div>
@@ -4861,19 +4864,14 @@ function renderAssignedStories() {
     // Setup drop zone for stories from picker
     setupAssignedStoriesDropZone();
 
-    // Click-to-edit: event delegation on container (persists across re-renders)
-    if (!container._storyEditDelegated) {
-        container._storyEditDelegated = true;
-        container.addEventListener('click', (e) => {
-            const mdBody = e.target.closest('.assigned-story-body .markdown-body');
-            if (!mdBody) return;
-            if (e.target.closest('a')) return; // allow link clicks
-            const storyBody = mdBody.closest('.assigned-story-body');
-            if (storyBody && storyBody.dataset.editing === 'true') return;
-            const card = mdBody.closest('.assigned-story-card');
-            if (!card) return;
-            const storyId = parseInt(card.dataset.storyId);
-            if (storyId) handleEditStoryForStage(storyId);
+    // Initialize TipTap editors for all stories (always editable, like resume editor)
+    if (window.storyEditor && _stageStoriesCache.length) {
+        const storyData = _stageStoriesCache.map(s => ({
+            id: s.story_id || s.id,
+            htmlContent: contentToHtml(s.custom_content || s.content || ''),
+        }));
+        window.storyEditor.initEditors(container, storyData, {
+            onSave: (storyId, html) => autoSaveStoryForStage(storyId, html),
         });
     }
 }
@@ -5184,82 +5182,26 @@ async function handlePickerCreateStory() {
     }
 }
 
-// ---- Edit Story Copy for Stage ----
+// ---- Auto-save Story (silent, like resume editor) ----
 
-function handleEditStoryForStage(storyId) {
-    const body = document.getElementById(`story-body-${storyId}`);
-    if (!body || body.dataset.editing === 'true') return;
-
-    const story = _stageStoriesCache.find(s => (s.story_id || s.id) === storyId);
-    if (!story) return;
-
-    // Body should already be expanded (user clicked on it), but ensure
-    const chevron = document.getElementById(`story-chevron-${storyId}`);
-    body.style.display = 'block';
-    if (chevron) chevron.innerHTML = '&#x25BC;';
-
-    const editContent = story.custom_content || story.content || '';
-    const htmlContent = contentToHtml(editContent);
-    body.dataset.editing = 'true';
-
-    if (window.storyEditor) {
-        window.storyEditor.init(storyId, body, htmlContent, {
-            hasCustomContent: !!story.custom_content,
-            onSave: (html) => saveStoryEditForStage(storyId, html),
-            onCancel: () => cancelStoryInlineEdit(storyId),
-            onReset: () => resetStoryToOriginal(storyId),
-        });
-    }
-}
-
-function cancelStoryInlineEdit(storyId) {
-    if (window.storyEditor) window.storyEditor.destroy();
-
-    const body = document.getElementById(`story-body-${storyId}`);
-    if (!body) return;
-    delete body.dataset.editing;
-    body.classList.remove('story-editor-active');
-
-    // Restore read-only content
-    const story = _stageStoriesCache.find(s => (s.story_id || s.id) === storyId);
-    const displayContent = story ? (story.custom_content || story.content || '') : '';
-    body.innerHTML = `<div class="markdown-body">${displayContent ? (looksLikeMarkdown(displayContent) ? marked.parse(displayContent) : displayContent) : '<em>No content</em>'}</div>`;
-}
-
-async function saveStoryEditForStage(storyId, html) {
-    if (!expandedJobId || !_selectedStageId) return;
-
-    // Get content from storyEditor if not passed (inline save)
-    const content = html || (window.storyEditor ? window.storyEditor.getHTML() : '');
-    if (!content) return;
-
+async function autoSaveStoryForStage(storyId, html) {
+    if (!expandedJobId || !_selectedStageId || !html) return;
     try {
-        await api.updateStageStoryContent(expandedJobId, _selectedStageId, storyId, content);
-        // Update cache
+        await api.updateStageStoryContent(expandedJobId, _selectedStageId, storyId, html);
         const story = _stageStoriesCache.find(s => (s.story_id || s.id) === storyId);
-        if (story) story.custom_content = content;
-
-        if (window.storyEditor) window.storyEditor.destroy();
-
-        // Restore body to read-only with new content
-        const body = document.getElementById(`story-body-${storyId}`);
-        if (body) {
-            delete body.dataset.editing;
-            body.classList.remove('story-editor-active');
-            body.innerHTML = `<div class="markdown-body">${content}</div>`;
-        }
-        // Update "edited" badge on the card
+        if (story) story.custom_content = html;
+        // Update "edited" badge if not already present
         const card = document.querySelector(`.assigned-story-card[data-story-id="${storyId}"]`);
-        if (card) {
+        if (card && !card.classList.contains('has-custom-content')) {
             card.classList.add('has-custom-content');
             const titleEl = card.querySelector('h4');
             if (titleEl && !titleEl.querySelector('.custom-badge')) {
                 titleEl.insertAdjacentHTML('beforeend', ' <span class="custom-badge">edited</span>');
             }
         }
-        showToast('Story saved', 'success');
+        if (window.storyEditor) window.storyEditor.showSaveStatus('Saved', 'saved');
     } catch (e) {
-        showToast('Failed to save', 'error');
+        if (window.storyEditor) window.storyEditor.showSaveStatus('Save failed', 'error');
     }
 }
 
@@ -5269,8 +5211,20 @@ async function resetStoryToOriginal(storyId) {
         await api.updateStageStoryContent(expandedJobId, _selectedStageId, storyId, null);
         const story = _stageStoriesCache.find(s => (s.story_id || s.id) === storyId);
         if (story) story.custom_content = null;
-        if (window.storyEditor) window.storyEditor.destroy();
-        renderAssignedStories();
+        // Update the editor content in-place (no full re-render needed)
+        if (window.storyEditor && story) {
+            const originalHtml = contentToHtml(story.content || '');
+            window.storyEditor.setContent(storyId, originalHtml);
+        }
+        // Remove edited badge and reset button
+        const card = document.querySelector(`.assigned-story-card[data-story-id="${storyId}"]`);
+        if (card) {
+            card.classList.remove('has-custom-content');
+            const badge = card.querySelector('.custom-badge');
+            if (badge) badge.remove();
+            const resetBtn = card.querySelector('.story-reset-btn');
+            if (resetBtn) resetBtn.remove();
+        }
         showToast('Reset to original', 'success');
     } catch (e) {
         showToast('Failed to reset', 'error');

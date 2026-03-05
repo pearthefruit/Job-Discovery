@@ -5188,43 +5188,26 @@ select.input option {
 
 /* =================== TipTap Story Editor =================== */
 
-/* Click-to-edit hint */
-.assigned-story-body .markdown-body {
-    cursor: text;
-    border-radius: var(--radius-sm);
-    transition: background 0.15s;
-}
-.assigned-story-body .markdown-body:hover {
-    background: rgba(255, 255, 255, 0.02);
-}
-
-.story-editor-active {
-    display: flex;
-    flex-direction: column;
-    gap: 0;
-}
-
-.story-editor-toolbar {
+/* Shared toolbar (sticky at top of stories container, like resume editor) */
+.story-toolbar-shared {
+    position: sticky;
+    top: 0;
+    z-index: 10;
     display: flex;
     gap: 0.2rem;
     padding: 0.4rem 0.5rem;
-    background: rgba(10, 10, 20, 0.92);
+    background: rgba(10, 10, 20, 0.95);
     backdrop-filter: blur(12px);
-    border-radius: var(--radius-sm) var(--radius-sm) 0 0;
     border: 1px solid var(--border-glass);
-    border-bottom: none;
+    border-radius: var(--radius-sm);
+    margin-bottom: 0.5rem;
     flex-wrap: wrap;
     align-items: center;
-    animation: story-toolbar-in 0.15s ease-out;
-}
-@keyframes story-toolbar-in {
-    from { opacity: 0; transform: translateY(-6px); }
-    to { opacity: 1; transform: translateY(0); }
 }
 
-.story-editor-toolbar button {
+.story-toolbar-shared button {
     padding: 0.3rem 0.5rem;
-    background: transparent;
+    background: rgba(255, 255, 255, 0.06);
     border: 1px solid transparent;
     border-radius: 4px;
     color: var(--text-secondary);
@@ -5234,54 +5217,44 @@ select.input option {
     transition: all var(--transition);
 }
 
-.story-editor-toolbar button:hover {
-    background: rgba(255, 255, 255, 0.06);
+.story-toolbar-shared button:hover {
+    background: rgba(255, 255, 255, 0.1);
     color: var(--text-primary);
 }
 
-.story-editor-toolbar button.is-active {
+.story-toolbar-shared button.is-active {
     background: rgba(108, 99, 255, 0.15);
     color: var(--accent);
     border-color: rgba(108, 99, 255, 0.3);
 }
 
-.story-editor-toolbar .divider {
+.story-toolbar-shared .divider {
     width: 1px;
     height: 18px;
     background: var(--border-glass);
     margin: 0 0.2rem;
 }
 
-.story-editor-expand-btn {
-    margin-left: auto !important;
-    font-size: 0.9rem !important;
-    opacity: 0.6;
+/* Save indicator in toolbar */
+.story-save-indicator {
+    margin-left: auto;
+    font-size: 0.7rem;
+    font-weight: 500;
+    transition: opacity 0.3s;
 }
-.story-editor-expand-btn:hover {
-    opacity: 1;
-}
+.story-save-indicator.editing { color: var(--text-muted); }
+.story-save-indicator.saved { color: var(--success); }
+.story-save-indicator.error { color: var(--danger); }
 
-.story-editor-reset-btn {
-    opacity: 0.6;
-    font-size: 0.9rem !important;
-}
-.story-editor-reset-btn:hover {
-    opacity: 1;
-    color: var(--danger) !important;
-}
-
+/* Story TipTap content (always editable, no border/chrome) */
 .story-tiptap-wrapper {
-    border: 1px solid var(--border-glass);
-    border-top: none;
-    border-radius: 0 0 var(--radius-sm) var(--radius-sm);
-    background: rgba(0, 0, 0, 0.2);
-    min-height: 200px;
+    min-height: 40px;
 }
 
 .story-tiptap-wrapper .ProseMirror {
     outline: none;
-    padding: 0.6rem 0.75rem;
-    min-height: 200px;
+    padding: 0.5rem 0.65rem;
+    min-height: 40px;
     font-size: 0.875rem;
     line-height: 1.7;
     color: var(--text-primary);
@@ -5296,75 +5269,15 @@ select.input option {
 .story-tiptap-wrapper .ProseMirror strong { font-weight: 600; }
 .story-tiptap-wrapper .ProseMirror a { color: var(--accent); text-decoration: underline; }
 
-/* ---- Story Editor Modal ---- */
-
-.story-editor-modal-overlay {
-    position: fixed;
-    top: 0; left: 0; right: 0; bottom: 0;
-    background: rgba(0, 0, 0, 0.7);
-    backdrop-filter: blur(4px);
-    z-index: 9999;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    opacity: 0;
-    transition: opacity 0.2s;
-}
-.story-editor-modal-overlay.visible { opacity: 1; }
-
-.story-editor-modal {
-    width: min(900px, 94vw);
-    max-height: 90vh;
-    background: var(--bg-card);
-    border: 1px solid var(--border-glass);
-    border-radius: var(--radius);
-    display: flex;
-    flex-direction: column;
-    overflow: hidden;
-    transform: scale(0.95);
-    transition: transform 0.2s;
-}
-.story-editor-modal-overlay.visible .story-editor-modal { transform: scale(1); }
-
-.story-editor-modal-header {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    padding: 0.75rem 1rem;
-    border-bottom: 1px solid var(--border-glass);
-}
-.story-editor-modal-header h3 { margin: 0; font-size: 1rem; }
-
-.story-editor-modal-toolbar {
-    border-bottom: 1px solid var(--border-glass);
-}
-.story-editor-modal-toolbar .story-editor-toolbar {
-    border: none;
-    border-radius: 0;
+/* Focused story card highlight */
+.assigned-story-card.story-editing {
+    border-color: rgba(108, 99, 255, 0.3);
+    background: rgba(108, 99, 255, 0.03);
 }
 
-.story-editor-modal-body {
-    flex: 1;
-    overflow-y: auto;
-    min-height: 300px;
-}
-
-.story-tiptap-modal {
-    border: none !important;
-    border-radius: 0 !important;
-    min-height: 100%;
-}
-.story-tiptap-modal .ProseMirror {
-    min-height: 400px;
-    padding: 1rem 1.25rem;
-}
-
-.story-editor-modal-footer {
-    display: flex;
-    gap: 0.5rem;
-    padding: 0.75rem 1rem;
-    border-top: 1px solid var(--border-glass);
-}
+/* Reset button in card actions */
+.story-reset-btn { opacity: 0.6; }
+.story-reset-btn:hover { opacity: 1; color: var(--danger) !important; }
 
 /* Custom content badge */
 .custom-badge {

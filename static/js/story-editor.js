@@ -1,9 +1,13 @@
 /**
  * TipTap Story Editor Module
  *
- * Click-to-edit inline editor for interview stage stories.
- * Auto-saves on blur — no explicit Save/Cancel needed.
- * Supports expand-to-modal for more editing space.
+ * Multi-instance editor for interview stage stories.
+ * Architecture mirrors the resume editor (editor.js):
+ *   - One TipTap instance per story (always editable)
+ *   - Shared toolbar above all stories
+ *   - Auto-save on update with 1.5s debounce
+ *   - No explicit Save/Cancel — just click and type
+ *
  * Exposes window.storyEditor API for app.js integration.
  */
 
@@ -12,20 +16,17 @@ import StarterKit from 'https://esm.sh/@tiptap/starter-kit@2.11.5';
 import Underline from 'https://esm.sh/@tiptap/extension-underline@2.11.5';
 import Link from 'https://esm.sh/@tiptap/extension-link@2.11.5';
 
-let currentEditor = null;
-let currentStoryId = null;
-let onSaveCallback = null;
-let onCancelCallback = null;
-let saveTimer = null;
-let isModalMode = false;
-let _hasChanges = false;
+let editors = {};          // { storyId: Editor }
+let activeEditor = null;   // { id, editor }
+let saveTimers = {};
+let _onSaveCallback = null;
+let _toolbarEl = null;
 
-// =================== Toolbar ===================
+// =================== Shared Toolbar ===================
 
-function createToolbar(containerId, options = {}) {
+function createToolbar() {
     const toolbar = document.createElement('div');
-    toolbar.className = 'story-editor-toolbar';
-    toolbar.id = `story-toolbar-${containerId}`;
+    toolbar.className = 'story-editor-toolbar story-toolbar-shared';
 
     const buttons = [
         { cmd: 'bold', label: 'B', title: 'Bold (Ctrl+B)', style: 'font-weight:bold' },
@@ -61,42 +62,18 @@ function createToolbar(containerId, options = {}) {
         toolbar.appendChild(btn);
     });
 
-    // Reset button (only if story has custom/edited content)
-    if (options.hasCustomContent && options.onReset) {
-        const sep = document.createElement('span');
-        sep.className = 'divider';
-        toolbar.appendChild(sep);
-
-        const resetBtn = document.createElement('button');
-        resetBtn.type = 'button';
-        resetBtn.className = 'story-editor-reset-btn';
-        resetBtn.title = 'Reset to original';
-        resetBtn.innerHTML = '&#x21BA;';
-        resetBtn.addEventListener('mousedown', (e) => {
-            e.preventDefault();
-            options.onReset();
-        });
-        toolbar.appendChild(resetBtn);
-    }
-
-    // Expand button (right-aligned)
-    const expandBtn = document.createElement('button');
-    expandBtn.type = 'button';
-    expandBtn.className = 'story-editor-expand-btn';
-    expandBtn.title = 'Expand to full editor';
-    expandBtn.innerHTML = '&#x26F6;';
-    expandBtn.addEventListener('mousedown', (e) => {
-        e.preventDefault();
-        expandToModal();
-    });
-    toolbar.appendChild(expandBtn);
+    // Save indicator (right-aligned)
+    const indicator = document.createElement('span');
+    indicator.className = 'story-save-indicator';
+    indicator.id = 'story-save-indicator';
+    toolbar.appendChild(indicator);
 
     return toolbar;
 }
 
 function runCommand(cmd) {
-    if (!currentEditor) return;
-    const chain = currentEditor.chain().focus();
+    if (!activeEditor) return;
+    const chain = activeEditor.editor.chain().focus();
     switch (cmd) {
         case 'bold': chain.toggleBold().run(); break;
         case 'italic': chain.toggleItalic().run(); break;
@@ -111,254 +88,168 @@ function runCommand(cmd) {
 }
 
 function handleLinkCommand() {
-    if (!currentEditor) return;
-    const prevUrl = currentEditor.getAttributes('link').href || '';
+    if (!activeEditor) return;
+    const ed = activeEditor.editor;
+    const prevUrl = ed.getAttributes('link').href || '';
     if (prevUrl) {
         const action = prompt(`Current link: ${prevUrl}\n\nEnter new URL (or leave empty to remove):`, prevUrl);
         if (action === null) return;
         if (action.trim() === '') {
-            currentEditor.chain().focus().unsetLink().run();
+            ed.chain().focus().unsetLink().run();
         } else {
-            currentEditor.chain().focus().extendMarkRange('link').setLink({ href: action.trim() }).run();
+            ed.chain().focus().extendMarkRange('link').setLink({ href: action.trim() }).run();
         }
     } else {
         const url = prompt('Enter URL:');
         if (!url || !url.trim()) return;
-        currentEditor.chain().focus().setLink({ href: url.trim() }).run();
+        ed.chain().focus().setLink({ href: url.trim() }).run();
     }
     updateToolbarState();
 }
 
 function updateToolbarState() {
-    const toolbars = document.querySelectorAll('.story-editor-toolbar');
-    toolbars.forEach(toolbar => {
-        if (!currentEditor) return;
-        toolbar.querySelectorAll('button[data-cmd]').forEach(btn => {
-            const cmd = btn.dataset.cmd;
-            let active = false;
+    if (!_toolbarEl) return;
+    const ed = activeEditor ? activeEditor.editor : null;
+    _toolbarEl.querySelectorAll('button[data-cmd]').forEach(btn => {
+        const cmd = btn.dataset.cmd;
+        let active = false;
+        if (ed) {
             switch (cmd) {
-                case 'bold': active = currentEditor.isActive('bold'); break;
-                case 'italic': active = currentEditor.isActive('italic'); break;
-                case 'underline': active = currentEditor.isActive('underline'); break;
-                case 'heading2': active = currentEditor.isActive('heading', { level: 2 }); break;
-                case 'heading3': active = currentEditor.isActive('heading', { level: 3 }); break;
-                case 'bulletList': active = currentEditor.isActive('bulletList'); break;
-                case 'orderedList': active = currentEditor.isActive('orderedList'); break;
-                case 'link': active = currentEditor.isActive('link'); break;
+                case 'bold': active = ed.isActive('bold'); break;
+                case 'italic': active = ed.isActive('italic'); break;
+                case 'underline': active = ed.isActive('underline'); break;
+                case 'heading2': active = ed.isActive('heading', { level: 2 }); break;
+                case 'heading3': active = ed.isActive('heading', { level: 3 }); break;
+                case 'bulletList': active = ed.isActive('bulletList'); break;
+                case 'orderedList': active = ed.isActive('orderedList'); break;
+                case 'link': active = ed.isActive('link'); break;
             }
-            btn.classList.toggle('is-active', active);
-        });
-    });
-}
-
-// =================== Editor Init/Destroy ===================
-
-function init(storyId, containerEl, htmlContent, callbacks) {
-    destroy(); // clean up any existing editor
-
-    currentStoryId = storyId;
-    onSaveCallback = callbacks.onSave || null;
-    onCancelCallback = callbacks.onCancel || null;
-    _hasChanges = false;
-
-    // Build editor UI — toolbar + editable content, no buttons
-    containerEl.innerHTML = '';
-    containerEl.classList.add('story-editor-active');
-
-    // Toolbar (slides in via CSS animation)
-    const toolbar = createToolbar(storyId, {
-        hasCustomContent: callbacks.hasCustomContent,
-        onReset: callbacks.onReset,
-    });
-    containerEl.appendChild(toolbar);
-
-    // Editor mount
-    const editorEl = document.createElement('div');
-    editorEl.className = 'story-tiptap-wrapper';
-    containerEl.appendChild(editorEl);
-
-    // Create TipTap instance
-    currentEditor = new Editor({
-        element: editorEl,
-        extensions: [
-            StarterKit.configure({ heading: { levels: [2, 3] } }),
-            Underline,
-            Link.configure({
-                openOnClick: false,
-                HTMLAttributes: { target: '_blank', rel: 'noopener' },
-            }),
-        ],
-        content: htmlContent || '',
-        onSelectionUpdate() { updateToolbarState(); },
-        onUpdate() {
-            updateToolbarState();
-            _hasChanges = true;
-        },
-        onBlur() {
-            // Auto-save when focus leaves the editor
-            // Toolbar buttons use mousedown+preventDefault so they don't trigger blur
-            if (isModalMode) return;
-            clearTimeout(saveTimer);
-            saveTimer = setTimeout(() => {
-                if (!currentEditor || isModalMode) return;
-                handleAutoSave();
-            }, 200);
-        },
-    });
-
-    // Focus at start — NOT end — to avoid scrolling to bottom
-    setTimeout(() => currentEditor && currentEditor.commands.focus('start'), 50);
-}
-
-function destroy() {
-    clearTimeout(saveTimer);
-    if (currentEditor) {
-        currentEditor.destroy();
-        currentEditor = null;
-    }
-    currentStoryId = null;
-    onSaveCallback = null;
-    onCancelCallback = null;
-    isModalMode = false;
-    _hasChanges = false;
-
-    // Clean up modal if open
-    const modal = document.getElementById('story-editor-modal');
-    if (modal) modal.remove();
-}
-
-function getHTML() {
-    return currentEditor ? currentEditor.getHTML() : '';
-}
-
-function handleAutoSave() {
-    if (_hasChanges && onSaveCallback) {
-        onSaveCallback(getHTML());
-    } else if (onCancelCallback) {
-        onCancelCallback();
-    }
-}
-
-function handleSave() {
-    if (onSaveCallback) onSaveCallback(getHTML());
-    if (isModalMode) closeModal();
-}
-
-function handleCancel() {
-    if (isModalMode) {
-        closeModal();
-        if (onCancelCallback) onCancelCallback();
-    } else {
-        if (onCancelCallback) onCancelCallback();
-    }
-}
-
-// =================== Expand to Modal ===================
-
-function expandToModal() {
-    if (!currentEditor) return;
-    clearTimeout(saveTimer); // cancel any pending auto-save
-    isModalMode = true;
-
-    // Capture current content
-    const html = getHTML();
-
-    // Create modal overlay
-    const modal = document.createElement('div');
-    modal.id = 'story-editor-modal';
-    modal.className = 'story-editor-modal-overlay';
-    modal.innerHTML = `
-        <div class="story-editor-modal">
-            <div class="story-editor-modal-header">
-                <h3>Edit Story</h3>
-                <button type="button" class="btn btn-ghost btn-sm" id="story-modal-close" title="Close">&times;</button>
-            </div>
-            <div class="story-editor-modal-toolbar" id="story-modal-toolbar-mount"></div>
-            <div class="story-editor-modal-body">
-                <div id="story-modal-editor" class="story-tiptap-wrapper story-tiptap-modal"></div>
-            </div>
-            <div class="story-editor-modal-footer">
-                <button type="button" class="btn btn-success btn-sm story-editor-save">Save</button>
-                <button type="button" class="btn btn-ghost btn-sm story-editor-cancel">Cancel</button>
-            </div>
-        </div>
-    `;
-    document.body.appendChild(modal);
-    requestAnimationFrame(() => modal.classList.add('visible'));
-
-    // Destroy inline editor
-    if (currentEditor) {
-        currentEditor.destroy();
-        currentEditor = null;
-    }
-
-    // Mount toolbar in modal
-    const toolbar = createToolbar('modal');
-    // Hide the expand button in modal (already expanded)
-    const expandBtn = toolbar.querySelector('.story-editor-expand-btn');
-    if (expandBtn) expandBtn.style.display = 'none';
-    document.getElementById('story-modal-toolbar-mount').appendChild(toolbar);
-
-    // Create new editor in modal
-    const editorEl = document.getElementById('story-modal-editor');
-    currentEditor = new Editor({
-        element: editorEl,
-        extensions: [
-            StarterKit.configure({ heading: { levels: [2, 3] } }),
-            Underline,
-            Link.configure({
-                openOnClick: false,
-                HTMLAttributes: { target: '_blank', rel: 'noopener' },
-            }),
-        ],
-        content: html,
-        onSelectionUpdate() { updateToolbarState(); },
-        onUpdate() { updateToolbarState(); },
-    });
-
-    setTimeout(() => currentEditor && currentEditor.commands.focus('end'), 100);
-
-    // Wire up modal buttons
-    modal.querySelector('#story-modal-close').addEventListener('click', () => closeModal());
-    modal.querySelector('.story-editor-save').addEventListener('click', handleSave);
-    modal.querySelector('.story-editor-cancel').addEventListener('click', handleCancel);
-
-    // Click backdrop to close
-    modal.addEventListener('click', (e) => {
-        if (e.target === modal) closeModal();
-    });
-
-    // Escape to close
-    const escHandler = (e) => {
-        if (e.key === 'Escape') {
-            e.stopPropagation();
-            e.preventDefault();
-            closeModal();
-            document.removeEventListener('keydown', escHandler);
         }
-    };
-    document.addEventListener('keydown', escHandler);
+        btn.classList.toggle('is-active', active);
+    });
 }
 
-function closeModal() {
-    const modal = document.getElementById('story-editor-modal');
-    if (modal) {
-        modal.classList.remove('visible');
-        setTimeout(() => modal.remove(), 200);
+function showSaveStatus(text, className) {
+    const el = document.getElementById('story-save-indicator');
+    if (!el) return;
+    el.textContent = text;
+    el.className = 'story-save-indicator ' + (className || '');
+    if (className === 'saved') {
+        setTimeout(() => {
+            if (el.textContent === text) {
+                el.textContent = '';
+                el.className = 'story-save-indicator';
+            }
+        }, 2000);
     }
-    if (currentEditor) {
-        currentEditor.destroy();
-        currentEditor = null;
+}
+
+// =================== Multi-Editor Init/Destroy ===================
+
+function initEditors(container, storyData, callbacks) {
+    destroyEditors();
+    _onSaveCallback = callbacks.onSave || null;
+
+    if (!storyData.length) return;
+
+    // Create shared toolbar at top of container
+    _toolbarEl = createToolbar();
+    container.insertBefore(_toolbarEl, container.firstChild);
+
+    // Create one TipTap editor per story
+    storyData.forEach(({ id, htmlContent }) => {
+        const wrapper = document.getElementById(`story-editor-${id}`);
+        if (!wrapper) return;
+
+        const editor = new Editor({
+            element: wrapper,
+            extensions: [
+                StarterKit.configure({ heading: { levels: [2, 3] } }),
+                Underline,
+                Link.configure({
+                    openOnClick: false,
+                    HTMLAttributes: { target: '_blank', rel: 'noopener' },
+                }),
+            ],
+            content: htmlContent || '',
+            onFocus() {
+                activeEditor = { id, editor };
+                updateToolbarState();
+                // Highlight focused story card
+                document.querySelectorAll('.assigned-story-card.story-editing')
+                    .forEach(c => c.classList.remove('story-editing'));
+                const card = wrapper.closest('.assigned-story-card');
+                if (card) card.classList.add('story-editing');
+            },
+            onBlur() {
+                // Remove highlight after a short delay (allows toolbar clicks)
+                setTimeout(() => {
+                    if (activeEditor && activeEditor.id === id && !editor.isFocused) {
+                        const card = wrapper.closest('.assigned-story-card');
+                        if (card) card.classList.remove('story-editing');
+                    }
+                }, 150);
+            },
+            onUpdate() {
+                updateToolbarState();
+                showSaveStatus('Editing...', 'editing');
+                // Debounced auto-save
+                clearTimeout(saveTimers[id]);
+                saveTimers[id] = setTimeout(() => {
+                    if (_onSaveCallback) {
+                        _onSaveCallback(id, editor.getHTML());
+                    }
+                }, 1500);
+            },
+            onSelectionUpdate() {
+                updateToolbarState();
+            },
+        });
+
+        editors[id] = editor;
+    });
+}
+
+function destroyEditors() {
+    // Flush any pending saves
+    Object.entries(saveTimers).forEach(([id, timer]) => {
+        clearTimeout(timer);
+        const editor = editors[id];
+        if (editor && _onSaveCallback) {
+            _onSaveCallback(parseInt(id), editor.getHTML());
+        }
+    });
+    saveTimers = {};
+
+    // Destroy all editors
+    Object.values(editors).forEach(e => e.destroy());
+    editors = {};
+    activeEditor = null;
+
+    // Remove toolbar
+    if (_toolbarEl && _toolbarEl.parentNode) {
+        _toolbarEl.remove();
     }
-    isModalMode = false;
-    // Trigger cancel to restore inline view
-    if (onCancelCallback) onCancelCallback();
+    _toolbarEl = null;
+    _onSaveCallback = null;
+}
+
+function getHTML(storyId) {
+    const editor = editors[storyId];
+    return editor ? editor.getHTML() : '';
+}
+
+function setContent(storyId, html) {
+    const editor = editors[storyId];
+    if (editor) editor.commands.setContent(html);
 }
 
 // =================== Export ===================
 
 window.storyEditor = {
-    init,
-    destroy,
+    initEditors,
+    destroyEditors,
     getHTML,
+    setContent,
+    showSaveStatus,
 };
