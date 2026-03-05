@@ -195,15 +195,15 @@ class JobDiscoveryDB:
 
     def add_job(self, job_url, job_url_normalized, title=None, company=None,
                 location=None, salary=None, source_url_id=None, file_path=None,
-                description=None):
+                description=None, status='new'):
         with self.get_connection() as conn:
             cursor = conn.execute(
                 """INSERT OR IGNORE INTO job_history
                    (job_url, job_url_normalized, title, company, location, salary,
-                    source_url_id, file_path, description)
-                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                    source_url_id, file_path, description, status)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
                 (job_url, job_url_normalized, title, company, location, salary,
-                 source_url_id, file_path, description),
+                 source_url_id, file_path, description, status),
             )
             return cursor.lastrowid
 
@@ -228,6 +228,16 @@ class JobDiscoveryDB:
             row = conn.execute("SELECT COUNT(*) as cnt FROM job_history").fetchone()
             return row["cnt"]
 
+    def get_filtered_jobs(self, limit=200):
+        with self.get_connection() as conn:
+            rows = conn.execute(
+                """SELECT * FROM job_history
+                   WHERE status = 'filtered'
+                   ORDER BY date_found DESC LIMIT ?""",
+                (limit,),
+            ).fetchall()
+            return [dict(r) for r in rows]
+
     def search_jobs(self, query):
         with self.get_connection() as conn:
             like = f"%{query}%"
@@ -240,14 +250,14 @@ class JobDiscoveryDB:
             return [dict(r) for r in rows]
 
     def update_job_status(self, job_id, status):
-        allowed = {'new', 'greenlighted', 'ignored', 'preparing', 'applied',
+        allowed = {'new', 'greenlighted', 'ignored', 'filtered', 'preparing', 'applied',
                    'interviewing', 'offer', 'rejected'}
         if status not in allowed:
             raise ValueError(f"Invalid status: {status}")
         # Auto-set pipeline_stage based on status
         stage_map = {
             'new': 'discovery', 'greenlighted': 'application', 'ignored': 'discovery',
-            'preparing': 'application', 'applied': 'application',
+            'filtered': 'discovery', 'preparing': 'application', 'applied': 'application',
             'interviewing': 'interview', 'offer': 'outcome', 'rejected': 'outcome',
         }
         stage = stage_map.get(status, 'discovery')

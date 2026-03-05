@@ -93,7 +93,7 @@ class GreenhouseScraper:
         token = self._extract_token(source['url'])
         if not token:
             self._warn(f"Could not extract Greenhouse board token from {source['url']}")
-            return []
+            return [], []
 
         api_url = f"{self.API_BASE}/{token}/jobs?content=true"
         self._info(f"Greenhouse API: {api_url}")
@@ -102,21 +102,36 @@ class GreenhouseScraper:
             response = self.http.get(api_url)
             if response.status_code != 200:
                 self._warn(f"Greenhouse API returned {response.status_code}")
-                return []
+                return [], []
             data = response.json()
         except Exception as e:
             self._warn(f"Greenhouse API failed: {e}")
-            return []
+            return [], []
 
         jobs_list = data.get('jobs', [])
         self._info(f"Greenhouse returned {len(jobs_list)} job(s)")
 
         discovered = []
+        filtered_out = []
         for job in jobs_list:
             title = job.get('title', '')
             if _matches_exclude(title, exclude_keywords):
                 continue
+
+            location = ''
+            loc_obj = job.get('location')
+            if loc_obj and isinstance(loc_obj, dict):
+                location = loc_obj.get('name', '')
+
             if not _matches_keywords(title, keywords):
+                filtered_out.append({
+                    'url': job.get('absolute_url', ''),
+                    'title': title,
+                    'company': source.get('company_name', ''),
+                    'location': location,
+                    'salary': None,
+                    'description': '',
+                })
                 continue
 
             # Strip HTML from content to get plain text description
@@ -125,11 +140,6 @@ class GreenhouseScraper:
             if content_html:
                 soup = BeautifulSoup(content_html, 'html.parser')
                 description = soup.get_text(separator='\n\n', strip=True)
-
-            location = ''
-            loc_obj = job.get('location')
-            if loc_obj and isinstance(loc_obj, dict):
-                location = loc_obj.get('name', '')
 
             salary = _extract_salary_from_text(description)
 
@@ -145,7 +155,7 @@ class GreenhouseScraper:
             if len(discovered) >= MAX_JOBS_PER_SOURCE:
                 break
 
-        return discovered
+        return discovered, filtered_out
 
     def close(self):
         self.http.close()
@@ -197,7 +207,7 @@ class LeverScraper:
         slug = self._extract_slug(source['url'])
         if not slug:
             self._warn(f"Could not extract Lever slug from {source['url']}")
-            return []
+            return [], []
 
         api_host = 'api.eu.lever.co' if self._is_eu(source['url']) else 'api.lever.co'
         api_url = f"https://{api_host}/v0/postings/{slug}?mode=json"
@@ -207,28 +217,38 @@ class LeverScraper:
             response = self.http.get(api_url)
             if response.status_code != 200:
                 self._warn(f"Lever API returned {response.status_code}")
-                return []
+                return [], []
             postings = response.json()
         except Exception as e:
             self._warn(f"Lever API failed: {e}")
-            return []
+            return [], []
 
         if not isinstance(postings, list):
             self._warn("Lever API returned unexpected format")
-            return []
+            return [], []
 
         self._info(f"Lever returned {len(postings)} posting(s)")
 
         discovered = []
+        filtered_out = []
         for posting in postings:
             title = posting.get('text', '')
             if _matches_exclude(title, exclude_keywords):
                 continue
-            if not _matches_keywords(title, keywords):
-                continue
 
             categories = posting.get('categories', {}) or {}
             location = categories.get('location', '')
+
+            if not _matches_keywords(title, keywords):
+                filtered_out.append({
+                    'url': posting.get('hostedUrl', '') or posting.get('applyUrl', ''),
+                    'title': title,
+                    'company': source.get('company_name', ''),
+                    'location': location,
+                    'salary': None,
+                    'description': '',
+                })
+                continue
 
             # Build salary string from salaryRange object
             salary = None
@@ -260,7 +280,7 @@ class LeverScraper:
             if len(discovered) >= MAX_JOBS_PER_SOURCE:
                 break
 
-        return discovered
+        return discovered, filtered_out
 
     def close(self):
         self.http.close()
@@ -304,7 +324,7 @@ class AshbyScraper:
         board = self._extract_board(source['url'])
         if not board:
             self._warn(f"Could not extract Ashby board from {source['url']}")
-            return []
+            return [], []
 
         api_url = f"{self.API_BASE}/{board}?includeCompensation=true"
         self._info(f"Ashby API: {api_url}")
@@ -313,24 +333,35 @@ class AshbyScraper:
             response = self.http.get(api_url)
             if response.status_code != 200:
                 self._warn(f"Ashby API returned {response.status_code}")
-                return []
+                return [], []
             data = response.json()
         except Exception as e:
             self._warn(f"Ashby API failed: {e}")
-            return []
+            return [], []
 
         jobs_list = data.get('jobs', [])
         self._info(f"Ashby returned {len(jobs_list)} job(s)")
 
         discovered = []
+        filtered_out = []
         for job in jobs_list:
             title = job.get('title', '')
             if _matches_exclude(title, exclude_keywords):
                 continue
-            if not _matches_keywords(title, keywords):
-                continue
 
             location = job.get('location', '')
+
+            if not _matches_keywords(title, keywords):
+                filtered_out.append({
+                    'url': job.get('jobUrl', ''),
+                    'title': title,
+                    'company': source.get('company_name', ''),
+                    'location': location,
+                    'salary': None,
+                    'description': '',
+                })
+                continue
+
             description = job.get('descriptionPlain', '') or ''
 
             # Build salary from compensation object
@@ -356,7 +387,7 @@ class AshbyScraper:
             if len(discovered) >= MAX_JOBS_PER_SOURCE:
                 break
 
-        return discovered
+        return discovered, filtered_out
 
     def close(self):
         self.http.close()

@@ -128,6 +128,64 @@ def get_jobs():
     return jsonify(jobs)
 
 
+@discovery_bp.route("/api/jobs/filtered", methods=["GET"])
+def get_filtered_jobs():
+    jobs = db.get_filtered_jobs()
+    return jsonify(jobs)
+
+
+# Stopwords for keyword suggestion (common English + job title noise)
+_SUGGEST_STOPWORDS = {
+    'a', 'an', 'the', 'and', 'or', 'of', 'for', 'in', 'at', 'to', 'with',
+    'on', 'by', 'as', 'is', 'it', 'be', 'are', 'was', 'were', 'will', 'that',
+    'this', 'from', 'have', 'has', 'had', 'but', 'not', 'no', 'do', 'does',
+    'we', 'you', 'he', 'she', 'they', 'i', 'its', 'our', 'your', 'their',
+    'us', 'co', 'inc', 'llc', 'ltd', 'ii', 'iii', 'iv', 'v', 'remote',
+}
+
+
+def _suggest_keywords(title, existing_keywords):
+    """Tokenize a job title and suggest words not already in the keyword list."""
+    import re
+    existing_lower = {kw.lower() for kw in existing_keywords}
+    tokens = re.findall(r'[a-zA-Z]+', title or '')
+    suggestions = []
+    seen = set()
+    for token in tokens:
+        lower = token.lower()
+        if len(lower) < 3:
+            continue
+        if lower in _SUGGEST_STOPWORDS:
+            continue
+        if lower in existing_lower:
+            continue
+        if lower in seen:
+            continue
+        seen.add(lower)
+        suggestions.append(token)
+    return suggestions
+
+
+@discovery_bp.route("/api/jobs/<int:job_id>/keep", methods=["POST"])
+def keep_filtered_job(job_id):
+    job = db.get_job_by_id(job_id)
+    if not job:
+        return jsonify({"error": "Job not found"}), 404
+    if job.get('status') != 'filtered':
+        return jsonify({"error": "Job is not in filtered status"}), 400
+
+    db.update_job_status(job_id, 'new')
+
+    all_filters = db.get_all_filters()
+    existing_keywords = [f['keyword'] for f in all_filters]
+    suggestions = _suggest_keywords(job.get('title', ''), existing_keywords)
+
+    return jsonify({
+        "message": "Job kept and promoted to new",
+        "keyword_suggestions": suggestions,
+    })
+
+
 @discovery_bp.route("/api/jobs/<int:job_id>/status", methods=["PUT"])
 def update_job_status(job_id):
     data = request.get_json()
@@ -366,6 +424,81 @@ def update_job_description(job_id):
     description = data.get("description", "")
     db.update_job_description(job_id, description)
     return jsonify({"message": "Description updated"})
+
+
+@discovery_bp.route("/api/jobs/<int:job_id>/rescrape", methods=["POST"])
+def rescrape_job(job_id):
+    """Re-fetch job details from the posting URL to fill in missing data."""
+    job = db.get_job_by_id(job_id)
+    if not job:
+        return jsonify({"error": "Job not found"}), 404
+
+    job_url = job.get("job_url", "")
+    if not job_url:
+        return jsonify({"error": "No URL stored for this job"}), 400
+
+    from scraper.linkedin import LinkedInScraper
+    from scraper.career_page import CareerPageScraper
+
+    is_linkedin = 'linkedin.com' in job_url.lower()
+    job_data = None
+
+    try:
+        if is_linkedin:
+            scraper = LinkedInScraper()
+            try:
+                job_data = scraper._fetch_job_detail(job_url)
+            finally:
+                scraper.close()
+        else:
+            scraper = CareerPageScraper(db)
+            try:
+                html = scraper._fetch_page(job_url)
+                if html and not scraper._is_blocked(html):
+                    domain = scraper._get_domain(job_url)
+                    source_stub = {"company_name": job.get("company"), "url": job_url}
+                    job_data = scraper._extract_job_data(html, job_url, domain, source_stub)
+            finally:
+                scraper.close()
+    except Exception as e:
+        return jsonify({"error": f"Scrape failed: {str(e)}"}), 500
+
+    if not job_data:
+        return jsonify({"error": "Could not extract any data from the page. The site may be blocking scrapers."}), 422
+
+    # Update fields that were missing
+    updated = []
+    fill_fields = {}
+    if job_data.get('description') and not job.get('description'):
+        fill_fields['description'] = job_data['description']
+        updated.append('description')
+    if job_data.get('location') and not job.get('location'):
+        fill_fields['location'] = job_data['location']
+        updated.append('location')
+    if job_data.get('salary') and not job.get('salary'):
+        fill_fields['salary'] = job_data['salary']
+        updated.append('salary')
+    if job_data.get('company') and not job.get('company'):
+        fill_fields['company'] = job_data['company']
+        updated.append('company')
+    if fill_fields:
+        db.update_job_fields(job_id, **fill_fields)
+
+    if not updated:
+        # If the job already has all fields, offer to overwrite description
+        if job_data.get('description'):
+            return jsonify({
+                "message": "All fields already populated. Use 'force' to overwrite description.",
+                "has_new_description": True,
+                "updated": [],
+            })
+        return jsonify({"error": "Rescrape succeeded but found no new data to fill in."}), 422
+
+    return jsonify({
+        "message": f"Updated: {', '.join(updated)}",
+        "updated": updated,
+        "description": job_data.get('description', ''),
+    })
 
 
 @discovery_bp.route("/api/jobs/<int:job_id>/reformat-jd", methods=["POST"])

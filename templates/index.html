@@ -127,6 +127,20 @@
             </div>
         </details>
 
+        <!-- Filtered Jobs Review -->
+        <details class="card collapsible-section" id="filtered-jobs-section" style="display:none;">
+            <summary class="collapsible-header">
+                <h2>Filtered Jobs &mdash; Review</h2>
+                <span class="badge-count" id="filtered-count-badge">0</span>
+            </summary>
+            <div class="collapsible-body">
+                <p class="hint">These jobs were filtered out during scraping because their titles didn't match your include keywords. Keep any that look relevant &mdash; this also suggests new keywords to improve future scrapes.</p>
+                <div id="filtered-jobs-list">
+                    <div class="empty-state">No filtered jobs to review.</div>
+                </div>
+            </div>
+        </details>
+
         <!-- Jobs Search + Import -->
         <div class="card">
             <div class="search-bar" style="display:flex;gap:0.5rem;align-items:center;">
@@ -149,22 +163,29 @@
                 <table class="jobs-table">
                     <thead>
                         <tr>
-                            <th class="sortable-th" onclick="toggleJobSort('title')"><span class="th-label">Title</span><span class="sort-icon" data-col="title"></span></th>
-                            <th class="filterable-th sortable-th" onclick="toggleJobSort('company')">
+                            <th class="sortable-th resizable-th" style="width:22%" onclick="toggleJobSort('title')"><span class="th-label">Title</span><span class="sort-icon" data-col="title"></span><span class="col-resize-handle"></span></th>
+                            <th class="filterable-th sortable-th resizable-th" style="width:14%" onclick="toggleJobSort('company')">
                                 <span class="th-label">Company</span><span class="sort-icon" data-col="company"></span>
                                 <button class="col-filter-btn" data-column="company" onclick="toggleColumnFilter(event, 'company')" title="Filter company">&#9662;</button>
+                                <span class="col-resize-handle"></span>
                             </th>
-                            <th class="filterable-th sortable-th" onclick="toggleJobSort('location')">
+                            <th class="filterable-th sortable-th resizable-th" style="width:14%" onclick="toggleJobSort('location')">
                                 <span class="th-label">Location</span><span class="sort-icon" data-col="location"></span>
                                 <button class="col-filter-btn" data-column="location" onclick="toggleColumnFilter(event, 'location')" title="Filter location">&#9662;</button>
+                                <span class="col-resize-handle"></span>
                             </th>
-                            <th class="sortable-th" onclick="toggleJobSort('salary')"><span class="th-label">Salary</span><span class="sort-icon" data-col="salary"></span></th>
-                            <th class="sortable-th" onclick="toggleJobSort('date_found')"><span class="th-label">Found</span><span class="sort-icon" data-col="date_found"></span></th>
-                            <th class="filterable-th sortable-th" onclick="toggleJobSort('status')">
+                            <th class="sortable-th resizable-th" style="width:14%" onclick="toggleJobSort('salary')"><span class="th-label">Salary</span><span class="sort-icon" data-col="salary"></span><span class="col-resize-handle"></span></th>
+                            <th class="filterable-th sortable-th resizable-th" style="width:8%" onclick="toggleJobSort('date_found')">
+                                <span class="th-label">Found</span><span class="sort-icon" data-col="date_found"></span>
+                                <button class="col-filter-btn" data-column="date_found" onclick="toggleColumnFilter(event, 'date_found')" title="Filter by date">&#9662;</button>
+                                <span class="col-resize-handle"></span>
+                            </th>
+                            <th class="filterable-th sortable-th resizable-th" style="width:12%" onclick="toggleJobSort('status')">
                                 <span class="th-label">Status</span><span class="sort-icon" data-col="status"></span>
                                 <button class="col-filter-btn" data-column="status" onclick="toggleColumnFilter(event, 'status')" title="Filter status">&#9662;</button>
+                                <span class="col-resize-handle"></span>
                             </th>
-                            <th>Actions</th>
+                            <th style="width:16%">Actions</th>
                         </tr>
                     </thead>
                     <tbody id="jobs-tbody">
@@ -448,6 +469,8 @@
                     <div class="jd-panel-header">
                         <span class="jd-panel-title">Job Description</span>
                         <div style="display:flex;gap:0.35rem;align-items:center;">
+                            <button class="btn btn-ghost btn-sm" onclick="editJDInPanel()" title="Edit JD">Edit</button>
+                            <button class="btn btn-ghost btn-sm" onclick="rescrapeInPanel()" title="Re-fetch from source">Rescrape</button>
                             <button id="btn-reformat-jd" class="btn btn-ghost btn-sm" onclick="reformatJD()" title="Reformat with AI">Reformat</button>
                             <button class="btn btn-ghost btn-sm" onclick="toggleJDPanel()" title="Hide">&times;</button>
                         </div>

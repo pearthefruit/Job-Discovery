@@ -18,7 +18,7 @@ let _jdPanelVisible = false;       // job description side panel toggle
 let _jdCache = {};                 // cached JD text per job id
 
 // Discovery tab filter/group state
-let columnFilters = { company: null, location: null, status: null };
+let columnFilters = { company: null, location: null, status: null, date_found: null };
 let showIgnoredJobs = false;
 let groupByCompany = false;
 let collapsedCompanyGroups = new Set();
@@ -118,6 +118,12 @@ const api = {
             body: JSON.stringify({ status })
         }).then(r => r.json());
     },
+    async getFilteredJobs() {
+        return fetch('/api/jobs/filtered').then(r => r.json());
+    },
+    async keepFilteredJob(id) {
+        return fetch(`/api/jobs/${id}/keep`, { method: 'POST' }).then(r => r.json());
+    },
     async updateJobNotes(id, notes) {
         return fetch(`/api/jobs/${id}/notes`, {
             method: 'PUT',
@@ -177,6 +183,14 @@ const api = {
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify(fields)
         }).then(r => r.json());
+    },
+    async rescrapeJob(jobId) {
+        const r = await fetch(`/api/jobs/${jobId}/rescrape`, { method: 'POST' });
+        try {
+            return { status: r.status, data: await r.json() };
+        } catch {
+            return { status: r.status, data: { error: `Server returned ${r.status}` } };
+        }
     },
     async reformatJD(jobId) {
         const r = await fetch(`/api/jobs/${jobId}/reformat-jd`, { method: 'POST' });
@@ -499,6 +513,7 @@ async function refreshDiscovery() {
     renderScraperStatus(status);
     renderSources(sources);
     renderFilters(filters);
+    loadFilteredJobs();
 }
 
 async function refreshToolkit() {
@@ -542,6 +557,12 @@ function applyFiltersAndRender() {
         if (columnFilters.status) {
             const display = getDisplayStatus(job.status);
             if (!columnFilters.status.has(display)) return false;
+        }
+        if (columnFilters.date_found) {
+            const df = columnFilters.date_found;
+            const jobDate = job.date_found ? job.date_found.split('T')[0] : '';
+            if (df.from && jobDate < df.from) return false;
+            if (df.to && jobDate > df.to) return false;
         }
         return true;
     });
@@ -699,6 +720,11 @@ function toggleColumnFilter(event, columnKey) {
     const btn = event.currentTarget;
     const th = btn.closest('th');
 
+    if (columnKey === 'date_found') {
+        _buildDateFilterDropdown(th);
+        return;
+    }
+
     // Build unique values from _allJobs
     const valuesSet = new Set();
     for (const job of _allJobs) {
@@ -732,6 +758,100 @@ function toggleColumnFilter(event, columnKey) {
     // Auto-apply on checkbox change
     const dropdown = th.querySelector('.col-filter-dropdown');
     dropdown.addEventListener('change', () => applyColumnFilterFromDropdown(columnKey, dropdown));
+}
+
+function _buildDateFilterDropdown(th) {
+    const existing = columnFilters.date_found || {};
+    const fromVal = existing.from || '';
+    const toVal = existing.to || '';
+    const preset = existing.preset || '';
+
+    let html = `<div class="col-filter-dropdown col-filter-date-dropdown" data-column="date_found" onclick="event.stopPropagation()">
+        <div class="date-filter-presets">
+            <button class="btn btn-ghost btn-sm ${preset === 'today' ? 'active' : ''}" onclick="applyDatePreset('today')">Today</button>
+            <button class="btn btn-ghost btn-sm ${preset === '7d' ? 'active' : ''}" onclick="applyDatePreset('7d')">7 days</button>
+            <button class="btn btn-ghost btn-sm ${preset === '30d' ? 'active' : ''}" onclick="applyDatePreset('30d')">30 days</button>
+            <button class="btn btn-ghost btn-sm ${preset === '90d' ? 'active' : ''}" onclick="applyDatePreset('90d')">90 days</button>
+        </div>
+        <div class="date-filter-range">
+            <label>From<input type="date" class="input date-filter-input" id="date-filter-from" value="${fromVal}" onchange="applyDateRange()"></label>
+            <label>To<input type="date" class="input date-filter-input" id="date-filter-to" value="${toVal}" onchange="applyDateRange()"></label>
+        </div>
+        <div class="col-filter-actions">
+            <button class="btn btn-ghost btn-sm" onclick="clearDateFilter()">Clear</button>
+        </div>
+    </div>`;
+
+    th.insertAdjacentHTML('beforeend', html);
+}
+
+function applyDatePreset(preset) {
+    const now = new Date();
+    let from;
+    if (preset === 'today') {
+        from = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+    } else if (preset === '7d') {
+        from = new Date(now.getTime() - 7 * 86400000);
+    } else if (preset === '30d') {
+        from = new Date(now.getTime() - 30 * 86400000);
+    } else if (preset === '90d') {
+        from = new Date(now.getTime() - 90 * 86400000);
+    }
+    const fromStr = from.toISOString().split('T')[0];
+    columnFilters.date_found = { from: fromStr, to: '', preset };
+
+    const btn = document.querySelector('.col-filter-btn[data-column="date_found"]');
+    if (btn) btn.classList.add('active');
+
+    // Update preset button styles
+    document.querySelectorAll('.date-filter-presets .btn').forEach(b => b.classList.remove('active'));
+    const clicked = [...document.querySelectorAll('.date-filter-presets .btn')].find(b => b.textContent.trim().toLowerCase().replace(' ', '') === preset.replace('d', ' days').replace('today', 'today'));
+    // Simpler: just re-highlight by preset
+    document.querySelectorAll('.date-filter-presets .btn').forEach(b => {
+        const map = { 'Today': 'today', '7 days': '7d', '30 days': '30d', '90 days': '90d' };
+        if (map[b.textContent.trim()] === preset) b.classList.add('active');
+    });
+
+    // Update date inputs
+    const fromInput = document.getElementById('date-filter-from');
+    const toInput = document.getElementById('date-filter-to');
+    if (fromInput) fromInput.value = fromStr;
+    if (toInput) toInput.value = '';
+
+    applyFiltersAndRender();
+}
+
+function applyDateRange() {
+    const fromInput = document.getElementById('date-filter-from');
+    const toInput = document.getElementById('date-filter-to');
+    const from = fromInput ? fromInput.value : '';
+    const to = toInput ? toInput.value : '';
+
+    if (!from && !to) {
+        clearDateFilter();
+        return;
+    }
+
+    columnFilters.date_found = { from, to, preset: '' };
+    const btn = document.querySelector('.col-filter-btn[data-column="date_found"]');
+    if (btn) btn.classList.add('active');
+
+    // Clear preset highlights
+    document.querySelectorAll('.date-filter-presets .btn').forEach(b => b.classList.remove('active'));
+
+    applyFiltersAndRender();
+}
+
+function clearDateFilter() {
+    columnFilters.date_found = null;
+    const btn = document.querySelector('.col-filter-btn[data-column="date_found"]');
+    if (btn) btn.classList.remove('active');
+    const fromInput = document.getElementById('date-filter-from');
+    const toInput = document.getElementById('date-filter-to');
+    if (fromInput) fromInput.value = '';
+    if (toInput) toInput.value = '';
+    document.querySelectorAll('.date-filter-presets .btn').forEach(b => b.classList.remove('active'));
+    applyFiltersAndRender();
 }
 
 function applyColumnFilterFromDropdown(columnKey, dropdown) {
@@ -781,7 +901,7 @@ function closeColumnFilters() {
 }
 
 function clearAllFilters() {
-    columnFilters = { company: null, location: null, status: null };
+    columnFilters = { company: null, location: null, status: null, date_found: null };
     document.querySelectorAll('.col-filter-btn.active').forEach(btn => btn.classList.remove('active'));
     applyFiltersAndRender();
 }
@@ -800,6 +920,11 @@ function updateFilterIndicator() {
     if (columnFilters.company) active.push({ key: 'company', label: 'Company', count: columnFilters.company.size });
     if (columnFilters.location) active.push({ key: 'location', label: 'Location', count: columnFilters.location.size });
     if (columnFilters.status) active.push({ key: 'status', label: 'Status', count: columnFilters.status.size });
+    if (columnFilters.date_found) {
+        const df = columnFilters.date_found;
+        const label = df.preset ? { today: 'Today', '7d': 'Last 7 days', '30d': 'Last 30 days', '90d': 'Last 90 days' }[df.preset] || 'Date' : 'Date range';
+        active.push({ key: 'date_found', label });
+    }
 
     if (!active.length) {
         bar.style.display = 'none';
@@ -808,7 +933,7 @@ function updateFilterIndicator() {
 
     bar.style.display = 'flex';
     bar.innerHTML = active.map(f =>
-        `<span class="filter-chip-active">${f.label} (${f.count}) <button onclick="clearSingleFilter('${f.key}')">&times;</button></span>`
+        `<span class="filter-chip-active">${f.label}${f.count != null ? ` (${f.count})` : ''} <button onclick="clearSingleFilter('${f.key}')">&times;</button></span>`
     ).join('') + `<button class="btn btn-ghost btn-sm" onclick="clearAllFilters()">Clear all</button>`;
 }
 
@@ -983,13 +1108,114 @@ async function openJobCard(jobId) {
     const body = document.getElementById('job-quick-card-body');
     if (!body) return;
     if (!desc) {
-        body.innerHTML = '<div class="empty-state">No job description available.</div>';
-    } else if (desc.trim().startsWith('<')) {
-        body.innerHTML = desc;
-    } else if (desc.includes('# ') || desc.includes('**') || desc.includes('- ')) {
-        body.innerHTML = marked.parse(desc);
+        body.innerHTML = `<div class="empty-state">
+            <p>No job description available.</p>
+            <div style="display:flex;gap:0.5rem;margin-top:0.75rem;justify-content:center;">
+                <button class="btn btn-primary btn-sm" onclick="rescrapeFromCard(${jobId})">Rescrape</button>
+                <button class="btn btn-ghost btn-sm" onclick="editJDFromCard(${jobId})">Paste JD</button>
+            </div>
+        </div>`;
     } else {
-        body.innerHTML = desc.split('\n\n').map(p => `<p>${escapeHtml(p)}</p>`).join('');
+        let rendered;
+        if (desc.trim().startsWith('<')) {
+            rendered = desc;
+        } else if (desc.includes('# ') || desc.includes('**') || desc.includes('- ')) {
+            rendered = marked.parse(desc);
+        } else {
+            rendered = desc.split('\n\n').map(p => `<p>${escapeHtml(p)}</p>`).join('');
+        }
+        body.innerHTML = `<div class="jd-rendered">${rendered}</div>
+            <div class="jd-edit-bar">
+                <button class="btn btn-ghost btn-sm" onclick="editJDFromCard(${jobId})">Edit JD</button>
+                <button class="btn btn-ghost btn-sm" onclick="rescrapeFromCard(${jobId})">Rescrape</button>
+            </div>`;
+    }
+}
+
+async function rescrapeFromCard(jobId) {
+    const body = document.getElementById('job-quick-card-body');
+    if (!body) return;
+    body.innerHTML = '<div class="empty-state">Rescraping...</div>';
+
+    const _updateBody = (html) => {
+        const el = document.getElementById('job-quick-card-body');
+        if (el) el.innerHTML = html;
+    };
+
+    try {
+        const { status, data } = await api.rescrapeJob(jobId);
+        if (status === 200 && data.updated && data.updated.length) {
+            showToast(`Updated: ${data.updated.join(', ')}`, 'success');
+            delete _jdCache[jobId];
+            if (data.updated.includes('description') && data.description) {
+                const html = data.description.includes('# ') || data.description.includes('**')
+                    ? marked.parse(data.description)
+                    : data.description.split('\n\n').map(p => `<p>${escapeHtml(p)}</p>`).join('');
+                _updateBody(`<div class="jd-rendered">${html}</div>
+                    <div class="jd-edit-bar">
+                        <button class="btn btn-ghost btn-sm" onclick="editJDFromCard(${jobId})">Edit JD</button>
+                        <button class="btn btn-ghost btn-sm" onclick="rescrapeFromCard(${jobId})">Rescrape</button>
+                    </div>`);
+            } else {
+                openJobCard(jobId);
+            }
+        } else {
+            const errMsg = data.error || 'No new data found. Try pasting the JD manually.';
+            showToast(errMsg, 'warning');
+            _updateBody(`<div class="empty-state">
+                <p>${escapeHtml(errMsg)}</p>
+                <div style="display:flex;gap:0.5rem;margin-top:0.75rem;justify-content:center;">
+                    <button class="btn btn-primary btn-sm" onclick="editJDFromCard(${jobId})">Paste JD</button>
+                    <button class="btn btn-ghost btn-sm" onclick="rescrapeFromCard(${jobId})">Retry</button>
+                </div>
+            </div>`);
+        }
+    } catch (e) {
+        showToast('Rescrape failed: ' + e.message, 'error');
+        _updateBody(`<div class="empty-state">
+            <p>Rescrape failed. Try pasting the JD manually.</p>
+            <div style="display:flex;gap:0.5rem;margin-top:0.75rem;justify-content:center;">
+                <button class="btn btn-primary btn-sm" onclick="editJDFromCard(${jobId})">Paste JD</button>
+                <button class="btn btn-ghost btn-sm" onclick="rescrapeFromCard(${jobId})">Retry</button>
+            </div>
+        </div>`);
+    }
+}
+
+function editJDFromCard(jobId) {
+    const body = document.getElementById('job-quick-card-body');
+    if (!body) return;
+
+    // Get existing text if any
+    const existing = body.querySelector('.jd-rendered');
+    const existingText = existing ? existing.innerText : '';
+
+    body.innerHTML = `<div class="jd-edit-container">
+        <textarea id="jd-edit-textarea" class="input jd-edit-textarea" placeholder="Paste job description here...">${escapeHtml(existingText)}</textarea>
+        <div class="jd-edit-actions">
+            <button class="btn btn-primary btn-sm" onclick="saveJDFromCard(${jobId})">Save</button>
+            <button class="btn btn-ghost btn-sm" onclick="openJobCard(${jobId})">Cancel</button>
+        </div>
+    </div>`;
+
+    document.getElementById('jd-edit-textarea').focus();
+}
+
+async function saveJDFromCard(jobId) {
+    const textarea = document.getElementById('jd-edit-textarea');
+    if (!textarea) return;
+    const description = textarea.value.trim();
+    if (!description) {
+        showToast('Description cannot be empty', 'error');
+        return;
+    }
+    try {
+        await api.updateJobDescription(jobId, description);
+        delete _jdCache[jobId];
+        showToast('Job description saved', 'success');
+        openJobCard(jobId);
+    } catch (e) {
+        showToast('Failed to save: ' + e.message, 'error');
     }
 }
 
@@ -1615,6 +1841,101 @@ async function reformatJD() {
     }
 }
 
+function editJDInPanel() {
+    if (!expandedJobId) return;
+    const jdContent = document.getElementById('jd-panel-content');
+    if (!jdContent) return;
+
+    const existingText = jdContent.innerText || '';
+
+    jdContent.innerHTML = `<div class="jd-edit-container">
+        <textarea id="jd-panel-edit-textarea" class="input jd-edit-textarea" placeholder="Paste job description here...">${escapeHtml(existingText)}</textarea>
+        <div class="jd-edit-actions">
+            <button class="btn btn-primary btn-sm" onclick="saveJDInPanel()">Save</button>
+            <button class="btn btn-ghost btn-sm" onclick="cancelJDPanelEdit()">Cancel</button>
+        </div>
+    </div>`;
+
+    document.getElementById('jd-panel-edit-textarea').focus();
+}
+
+async function saveJDInPanel() {
+    if (!expandedJobId) return;
+    const textarea = document.getElementById('jd-panel-edit-textarea');
+    if (!textarea) return;
+    const description = textarea.value.trim();
+    if (!description) {
+        showToast('Description cannot be empty', 'error');
+        return;
+    }
+    try {
+        await api.updateJobDescription(expandedJobId, description);
+        delete _jdCache[expandedJobId];
+        showToast('Job description saved', 'success');
+        // Re-render the panel
+        const html = description.includes('# ') || description.includes('**')
+            ? marked.parse(description)
+            : description.split('\n\n').map(p => `<p>${escapeHtml(p)}</p>`).join('');
+        const jdContent = document.getElementById('jd-panel-content');
+        jdContent.innerHTML = html;
+        _jdCache[expandedJobId] = html;
+    } catch (e) {
+        showToast('Failed to save: ' + e.message, 'error');
+    }
+}
+
+function cancelJDPanelEdit() {
+    if (!expandedJobId) return;
+    // Re-render from cache or refetch
+    const jdContent = document.getElementById('jd-panel-content');
+    if (_jdCache[expandedJobId]) {
+        jdContent.innerHTML = _jdCache[expandedJobId];
+    } else {
+        // Force re-toggle to refetch
+        _jdPanelVisible = false;
+        toggleJDPanel();
+    }
+}
+
+async function rescrapeInPanel() {
+    if (!expandedJobId) return;
+    const jdContent = document.getElementById('jd-panel-content');
+    if (!jdContent) return;
+
+    jdContent.innerHTML = '<div class="empty-state">Rescraping...</div>';
+
+    try {
+        const { status, data } = await api.rescrapeJob(expandedJobId);
+        if (status === 200 && data.updated && data.updated.length) {
+            showToast(`Updated: ${data.updated.join(', ')}`, 'success');
+            delete _jdCache[expandedJobId];
+            if (data.description) {
+                const html = data.description.includes('# ') || data.description.includes('**')
+                    ? marked.parse(data.description)
+                    : data.description.split('\n\n').map(p => `<p>${escapeHtml(p)}</p>`).join('');
+                jdContent.innerHTML = html;
+                _jdCache[expandedJobId] = html;
+            } else {
+                _jdPanelVisible = false;
+                toggleJDPanel();
+            }
+        } else {
+            const errMsg = data.error || 'No new data found.';
+            showToast(errMsg, 'warning');
+            jdContent.innerHTML = `<div class="empty-state">
+                <p>${escapeHtml(errMsg)}</p>
+                <button class="btn btn-ghost btn-sm" style="margin-top:0.5rem" onclick="editJDInPanel()">Paste JD manually</button>
+            </div>`;
+        }
+    } catch (e) {
+        showToast('Rescrape failed: ' + e.message, 'error');
+        jdContent.innerHTML = `<div class="empty-state">
+            <p>Rescrape failed. Try pasting the JD manually.</p>
+            <button class="btn btn-primary btn-sm" style="margin-top:0.5rem" onclick="editJDInPanel()">Paste JD</button>
+        </div>`;
+    }
+}
+
 async function handleExpandedStatusChange(newStatus) {
     if (!expandedJobId) return;
 
@@ -1911,6 +2232,140 @@ function renderFilters(filters) {
             <span class="remove" onclick="handleDeleteFilter(${f.id})">&times;</span>
         </span>`;
     }).join('');
+}
+
+// =================== Filtered Jobs Review ===================
+
+async function loadFilteredJobs() {
+    try {
+        const jobs = await api.getFilteredJobs();
+        renderFilteredJobs(Array.isArray(jobs) ? jobs : []);
+    } catch (e) {
+        // Silent fail — filtered section just won't show
+    }
+}
+
+function renderFilteredJobs(jobs) {
+    const section = document.getElementById('filtered-jobs-section');
+    const badge = document.getElementById('filtered-count-badge');
+    const list = document.getElementById('filtered-jobs-list');
+    if (!section || !badge || !list) return;
+
+    badge.textContent = jobs.length;
+
+    if (!jobs.length) {
+        section.style.display = 'none';
+        list.innerHTML = '<div class="empty-state">No filtered jobs to review.</div>';
+        return;
+    }
+
+    section.style.display = '';
+
+    list.innerHTML = jobs.map(job => {
+        const d = job.date_found ? new Date(job.date_found) : null;
+        const date = d ? d.toLocaleDateString() : '';
+        return `
+            <div class="filtered-job-row" data-job-id="${job.id}">
+                <div class="filtered-job-meta">
+                    <strong>${escapeHtml(job.title || 'Untitled')}</strong>
+                    <span class="filtered-job-company">${escapeHtml(job.company || '')}</span>
+                    <span class="filtered-job-location">${escapeHtml(job.location || '')}</span>
+                    <span class="filtered-job-date">${date}</span>
+                </div>
+                <div class="filtered-job-actions">
+                    <button class="btn btn-primary btn-sm" onclick="handleKeepFilteredJob(${job.id}, this)">Keep</button>
+                    <button class="btn btn-ghost btn-sm" onclick="handleDiscardFilteredJob(${job.id})">Discard</button>
+                </div>
+                <div class="filtered-keyword-suggestions" id="kw-suggest-${job.id}" style="display:none;"></div>
+            </div>
+        `;
+    }).join('');
+}
+
+async function handleKeepFilteredJob(jobId, btn) {
+    btn.disabled = true;
+    btn.textContent = 'Keeping...';
+
+    const result = await api.keepFilteredJob(jobId);
+
+    if (result.error) {
+        showToast(result.error, 'error');
+        btn.disabled = false;
+        btn.textContent = 'Keep';
+        return;
+    }
+
+    showToast('Job promoted to new!', 'success');
+
+    const row = btn.closest('.filtered-job-row');
+    const suggestions = result.keyword_suggestions || [];
+    const suggestEl = document.getElementById(`kw-suggest-${jobId}`);
+
+    // Hide action buttons
+    const actionsEl = row ? row.querySelector('.filtered-job-actions') : null;
+    if (actionsEl) actionsEl.style.display = 'none';
+
+    if (suggestions.length && suggestEl) {
+        const chips = suggestions.map(kw =>
+            `<button class="btn btn-ghost btn-sm keyword-suggest-chip" onclick="handleAddSuggestedKeyword('${escapeHtml(kw)}', this)">+ ${escapeHtml(kw)}</button>`
+        ).join('');
+        suggestEl.innerHTML = `
+            <span class="hint" style="margin-right:0.5rem;">Add as keyword?</span>
+            ${chips}
+        `;
+        suggestEl.style.display = 'flex';
+        // Replace Keep/Discard with a Done button
+        if (actionsEl) {
+            actionsEl.innerHTML = `<button class="btn btn-ghost btn-sm" onclick="dismissFilteredRow(this)">Done</button>`;
+            actionsEl.style.display = '';
+        }
+    } else {
+        // No suggestions — just remove the row
+        if (row) { row.remove(); updateFilteredBadge(); }
+    }
+
+    // Refresh just the jobs table (not filtered section — would wipe out the suggestion chips)
+    const jobs = await api.getJobs();
+    renderJobs(jobs);
+}
+
+function dismissFilteredRow(btn) {
+    const row = btn.closest('.filtered-job-row');
+    if (row) row.remove();
+    updateFilteredBadge();
+}
+
+async function handleAddSuggestedKeyword(keyword, btn) {
+    btn.disabled = true;
+    const result = await api.addFilter(keyword, 'include');
+    if (result.error) {
+        showToast(result.error || 'Already exists', 'warn');
+        btn.disabled = false;
+        return;
+    }
+    showToast(`Keyword "${keyword}" added`, 'success');
+    btn.textContent = `\u2713 ${keyword}`;
+    btn.classList.add('keyword-suggest-added');
+    // Refresh filters list
+    const filters = await api.getFilters();
+    renderFilters(filters);
+    document.getElementById('filter-count-badge').textContent = filters.length;
+}
+
+async function handleDiscardFilteredJob(jobId) {
+    await api.updateJobStatus(jobId, 'ignored');
+    showToast('Job discarded', 'success');
+    const row = document.querySelector(`.filtered-job-row[data-job-id="${jobId}"]`);
+    if (row) row.remove();
+    updateFilteredBadge();
+}
+
+function updateFilteredBadge() {
+    const badge = document.getElementById('filtered-count-badge');
+    const section = document.getElementById('filtered-jobs-section');
+    const rows = document.querySelectorAll('.filtered-job-row');
+    if (badge) badge.textContent = rows.length;
+    if (section && !rows.length) section.style.display = 'none';
 }
 
 // =================== Event Handlers (Discovery) ===================
@@ -5444,6 +5899,40 @@ async function handleUpdateNotes(jobId, notes) {
         leftPanel = null;
         rightPanel = null;
         container = null;
+        document.body.style.cursor = '';
+        document.body.style.userSelect = '';
+    });
+})();
+
+// =================== Column Resize ===================
+
+(function initColumnResize() {
+    let th = null, startX = 0, startW = 0;
+
+    document.addEventListener('mousedown', (e) => {
+        if (!e.target.classList.contains('col-resize-handle')) return;
+        e.preventDefault();
+        e.stopPropagation();
+        th = e.target.closest('th');
+        if (!th) return;
+        startX = e.clientX;
+        startW = th.offsetWidth;
+        e.target.classList.add('active');
+        document.body.style.cursor = 'col-resize';
+        document.body.style.userSelect = 'none';
+    });
+
+    document.addEventListener('mousemove', (e) => {
+        if (!th) return;
+        const newW = Math.max(50, startW + (e.clientX - startX));
+        th.style.width = newW + 'px';
+    });
+
+    document.addEventListener('mouseup', () => {
+        if (!th) return;
+        const handle = th.querySelector('.col-resize-handle');
+        if (handle) handle.classList.remove('active');
+        th = null;
         document.body.style.cursor = '';
         document.body.style.userSelect = '';
     });

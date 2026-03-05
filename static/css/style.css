@@ -511,6 +511,7 @@ select.input option {
     width: 100%;
     border-collapse: collapse;
     font-size: 0.85rem;
+    table-layout: fixed;
 }
 
 .jobs-table th {
@@ -522,12 +523,40 @@ select.input option {
     text-transform: uppercase;
     letter-spacing: 0.05em;
     border-bottom: 1px solid var(--border-glass);
+    vertical-align: middle;
+    white-space: nowrap;
+}
+.resizable-th {
+    position: relative;
+}
+.col-resize-handle {
+    position: absolute;
+    right: 0;
+    top: 25%;
+    bottom: 25%;
+    width: 3px;
+    cursor: col-resize;
+    background: rgba(255, 255, 255, 0.12);
+    border-radius: 2px;
+    z-index: 2;
+    transition: background 0.15s, width 0.15s;
+}
+.resizable-th:hover .col-resize-handle {
+    background: rgba(255, 255, 255, 0.25);
+}
+.col-resize-handle:hover,
+.col-resize-handle.active {
+    background: var(--accent);
+    width: 4px;
 }
 
 .jobs-table td {
     padding: 0.75rem 0.65rem;
     border-bottom: 1px solid rgba(255, 255, 255, 0.03);
-    vertical-align: top;
+    vertical-align: middle;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
 }
 
 .jobs-table tr.job-row-clickable {
@@ -785,6 +814,61 @@ select.input option {
     color: var(--danger);
 }
 
+/* Filtered Jobs Review */
+.filtered-job-row {
+    padding: 0.65rem 0;
+    border-bottom: 1px solid var(--border-glass);
+    display: flex;
+    flex-direction: column;
+    gap: 0.35rem;
+}
+.filtered-job-row:last-child { border-bottom: none; }
+.filtered-job-meta {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.5rem;
+    align-items: baseline;
+}
+.filtered-job-meta strong {
+    color: var(--text-primary);
+    font-size: 0.88rem;
+}
+.filtered-job-company,
+.filtered-job-location,
+.filtered-job-date {
+    color: var(--text-muted);
+    font-size: 0.8rem;
+}
+.filtered-job-company::before { content: '\00b7'; margin-right: 0.3rem; }
+.filtered-job-location::before { content: '\00b7'; margin-right: 0.3rem; }
+.filtered-job-date::before { content: '\00b7'; margin-right: 0.3rem; }
+.filtered-job-actions {
+    display: flex;
+    gap: 0.4rem;
+}
+.filtered-keyword-suggestions {
+    display: flex;
+    align-items: center;
+    gap: 0.3rem;
+    flex-wrap: wrap;
+    margin-top: 0.25rem;
+}
+.keyword-suggest-chip {
+    border: 1px dashed rgba(108, 99, 255, 0.4) !important;
+    border-radius: 999px;
+    font-size: 0.75rem;
+    color: var(--accent);
+}
+.keyword-suggest-chip:hover {
+    border-color: var(--accent) !important;
+    background: rgba(108, 99, 255, 0.1);
+}
+.keyword-suggest-added {
+    opacity: 0.5;
+    cursor: default;
+    pointer-events: none;
+}
+
 /* Toast */
 .toast-container {
     position: fixed;
@@ -921,6 +1005,9 @@ select.input option {
 
 .collapsible-section .collapsible-body {
     padding: 1rem 1.25rem 1.25rem;
+    display: flex;
+    flex-direction: column;
+    gap: 0.75rem;
 }
 
 .badge-count {
@@ -5877,28 +5964,30 @@ select.input option {
 }
 
 .col-filter-btn {
-    background: none;
-    border: none;
+    background: rgba(255, 255, 255, 0.08);
+    border: 1px solid rgba(255, 255, 255, 0.12);
     color: var(--text-secondary);
-    font-size: 0.75rem;
+    font-size: 0.7rem;
     cursor: pointer;
-    padding: 2px 5px;
-    border-radius: 3px;
-    opacity: 0.8;
-    transition: opacity var(--transition), color var(--transition), background var(--transition);
+    padding: 2px 6px;
+    border-radius: 4px;
+    opacity: 1;
+    transition: opacity var(--transition), color var(--transition), background var(--transition), border-color var(--transition);
     vertical-align: middle;
+    position: relative;
+    z-index: 3;
 }
 
 .col-filter-btn:hover {
-    opacity: 1;
     color: var(--text-primary);
-    background: var(--bg-glass-hover);
+    background: rgba(255, 255, 255, 0.14);
+    border-color: rgba(255, 255, 255, 0.25);
 }
 
 .col-filter-btn.active {
-    opacity: 1;
     color: var(--accent);
-    background: rgba(108, 99, 255, 0.12);
+    background: rgba(108, 99, 255, 0.15);
+    border-color: rgba(108, 99, 255, 0.35);
 }
 
 /* Filter dropdown */
@@ -5965,6 +6054,87 @@ select.input option {
 .col-filter-item input[type="checkbox"] {
     accent-color: var(--accent);
     flex-shrink: 0;
+}
+
+/* Date filter dropdown */
+.col-filter-date-dropdown {
+    min-width: 240px;
+    max-height: none;
+    padding: 0.5rem;
+}
+
+.date-filter-presets {
+    display: flex;
+    gap: 0.35rem;
+    margin-bottom: 0.5rem;
+    flex-wrap: wrap;
+}
+
+.date-filter-presets .btn {
+    font-size: 0.72rem;
+    padding: 0.2rem 0.55rem;
+    border: 1px solid var(--border-glass);
+    border-radius: 999px;
+}
+
+.date-filter-presets .btn.active {
+    background: rgba(108, 99, 255, 0.15);
+    border-color: rgba(108, 99, 255, 0.35);
+    color: var(--accent);
+}
+
+.date-filter-range {
+    display: flex;
+    gap: 0.5rem;
+    margin-bottom: 0.5rem;
+}
+
+.date-filter-range label {
+    display: flex;
+    flex-direction: column;
+    gap: 0.2rem;
+    font-size: 0.7rem;
+    color: var(--text-muted);
+    flex: 1;
+}
+
+.date-filter-input {
+    font-size: 0.75rem !important;
+    padding: 0.3rem 0.4rem !important;
+    color-scheme: dark;
+}
+
+/* JD Edit UI */
+.jd-edit-container {
+    display: flex;
+    flex-direction: column;
+    height: 100%;
+    gap: 0.5rem;
+}
+
+.jd-edit-textarea {
+    flex: 1;
+    min-height: 200px;
+    resize: vertical;
+    font-family: var(--font-mono, monospace);
+    font-size: 0.82rem;
+    line-height: 1.5;
+    white-space: pre-wrap;
+}
+
+.jd-edit-actions {
+    display: flex;
+    gap: 0.5rem;
+    justify-content: flex-end;
+    padding-top: 0.25rem;
+}
+
+.jd-edit-bar {
+    display: flex;
+    gap: 0.35rem;
+    padding-top: 0.5rem;
+    border-top: 1px solid var(--border-glass);
+    margin-top: 0.75rem;
 }
 
 /* Filter indicator bar */

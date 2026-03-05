@@ -43,7 +43,7 @@ class LinkedInScraper:
     def scrape(self, source, keywords, exclude_keywords=None):
         """
         Scrape LinkedIn SERP for jobs.
-        Returns list of job dicts: {url, title, company, location, salary, description}
+        Returns (matched, filtered_out) tuple of job dicts.
         """
         exclude_keywords = exclude_keywords or []
         self._info(f"Querying LinkedIn guest API for job links...")
@@ -56,6 +56,7 @@ class LinkedInScraper:
             self._info(f"LinkedIn: found {len(serp_jobs)} job card(s)")
 
         discovered = []
+        filtered_out = []
         detail_failures = 0
         for i, serp_data in enumerate(serp_jobs, 1):
             job_url = serp_data['url']
@@ -68,6 +69,7 @@ class LinkedInScraper:
                         continue
                     if not self._matches_keywords(title, keywords):
                         self._info(f"Filtered out (no keyword match): {title}")
+                        filtered_out.append(serp_data)
                         continue
 
                 # Try to enrich with detail page (adds description)
@@ -97,7 +99,7 @@ class LinkedInScraper:
         if detail_failures:
             self._warn(f"{detail_failures} jobs saved with SERP-only data (detail pages blocked)")
 
-        return discovered
+        return discovered, filtered_out
 
     def _fetch_serp_cards(self, serp_url):
         """Fetch job cards from LinkedIn SERP, extracting metadata from each card.

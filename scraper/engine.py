@@ -86,15 +86,15 @@ class ScrapeEngine:
 
                 try:
                     if scraper_type == 'linkedin':
-                        discovered = linkedin_scraper.scrape(source, keywords, exclude_keywords)
+                        discovered, filtered = linkedin_scraper.scrape(source, keywords, exclude_keywords)
                     elif scraper_type == 'greenhouse':
-                        discovered = greenhouse_scraper.scrape(source, keywords, exclude_keywords)
+                        discovered, filtered = greenhouse_scraper.scrape(source, keywords, exclude_keywords)
                     elif scraper_type == 'lever':
-                        discovered = lever_scraper.scrape(source, keywords, exclude_keywords)
+                        discovered, filtered = lever_scraper.scrape(source, keywords, exclude_keywords)
                     elif scraper_type == 'ashby':
-                        discovered = ashby_scraper.scrape(source, keywords, exclude_keywords)
+                        discovered, filtered = ashby_scraper.scrape(source, keywords, exclude_keywords)
                     else:
-                        discovered = career_scraper.scrape(source, keywords, exclude_keywords)
+                        discovered, filtered = career_scraper.scrape(source, keywords, exclude_keywords)
 
                     log.info(f"Found {len(discovered)} matching job(s) from {source['company_name']}")
 
@@ -112,6 +112,20 @@ class ScrapeEngine:
                                 errors.append(err)
                         else:
                             source_dupes += 1
+
+                    # Save filtered-out jobs for manual review
+                    jobs_filtered_count = 0
+                    for job in filtered:
+                        if not job.get('url'):
+                            continue
+                        if not self.dedup.is_duplicate(job['url']):
+                            try:
+                                self._save_filtered_job(job, source)
+                                jobs_filtered_count += 1
+                            except Exception:
+                                pass
+                    if jobs_filtered_count:
+                        log.info(f"Saved {jobs_filtered_count} filtered job(s) for review from {source['company_name']}")
 
                     if source_dupes > 0:
                         if source_dupes == len(discovered):
@@ -170,4 +184,23 @@ class ScrapeEngine:
             source_url_id=source['id'],
             file_path=file_path,
             description=job.get('description'),
+        )
+
+    def _save_filtered_job(self, job, source):
+        """Save a keyword-filtered job for manual review (no markdown file)."""
+        if not job.get('company'):
+            job['company'] = source.get('company_name', 'Unknown')
+
+        normalized = DeduplicationManager.normalize_url(job['url'])
+
+        self.db.add_job(
+            job_url=job['url'],
+            job_url_normalized=normalized,
+            title=job.get('title'),
+            company=job.get('company'),
+            location=job.get('location'),
+            salary=job.get('salary'),
+            source_url_id=source['id'],
+            description=job.get('description'),
+            status='filtered',
         )

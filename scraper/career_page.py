@@ -56,10 +56,11 @@ class CareerPageScraper:
     # =================== Main Entry Point ===================
 
     def scrape(self, source, keywords, exclude_keywords=None):
-        """Scrape a company career page for job listings. Returns list of job dicts."""
+        """Scrape a company career page for job listings. Returns (matched, filtered_out) tuple."""
         self._exclude_keywords = exclude_keywords or []
         domain = self._get_domain(source['url'])
         discovered = []
+        filtered_out = []
 
         # Phase 1: Fetch listing page via httpx
         self._info(f"Loading {source['url'][:80]}...")
@@ -70,17 +71,17 @@ class CareerPageScraper:
             # Try ATS APIs / Workday even if page fetch failed (the page might be pure SPA)
             fallback_results = self._try_fallback_apis(source, keywords)
             if fallback_results:
-                return fallback_results
-            return []
+                return fallback_results, filtered_out
+            return [], filtered_out
 
         if self._is_blocked(html):
             self._warn(f"Blocked/captcha detected on {domain}, skipping")
-            return []
+            return [], filtered_out
 
         # Phase 1b: Phenom People detection (embedded JSON extraction)
         phenom_jobs = self._try_phenom_extraction(html, source, keywords)
         if phenom_jobs is not None:
-            return phenom_jobs
+            return phenom_jobs, filtered_out
 
         # Phase 2: Extract job links from listing page
         self._info("Extracting job links...")
@@ -99,13 +100,17 @@ class CareerPageScraper:
             self._info("No job links found. Trying as single job detail page...")
             job_data = self._extract_job_data(html, source['url'], domain, source)
             if job_data and job_data.get('title'):
-                if not self._matches_exclude(job_data['title']) and self._matches_keywords(job_data['title'], keywords):
+                if self._matches_exclude(job_data['title']):
+                    pass
+                elif self._matches_keywords(job_data['title'], keywords):
                     discovered.append(job_data)
+                else:
+                    filtered_out.append(job_data)
             if not discovered:
                 fallback_results = self._try_fallback_apis(source, keywords, html)
                 if fallback_results:
                     discovered.extend(fallback_results)
-            return discovered
+            return discovered, filtered_out
 
         # Apply per-source limit
         if len(job_links) > MAX_JOBS_PER_SOURCE:
@@ -140,6 +145,7 @@ class CareerPageScraper:
                             self._info(f"Matched: {job_data['title']}")
                         else:
                             self._info(f"Filtered out: {job_data['title']}")
+                            filtered_out.append(job_data)
                     else:
                         empty_count += 1
                         consecutive_non_job += 1
@@ -162,7 +168,7 @@ class CareerPageScraper:
         if domain in self._llm_used_for:
             self._info(f"[OPTIMIZE] {domain} required LLM extraction — consider adding CSS selectors")
 
-        return discovered
+        return discovered, filtered_out
 
     # =================== Page Fetching ===================
 
