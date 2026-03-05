@@ -5173,11 +5173,13 @@ function handleEditStoryForStage(storyId) {
     const card = document.querySelector(`.assigned-story-card[data-story-id="${storyId}"]`);
     if (!card) return;
 
-    // Toggle: if editor already open, close it
-    const existingEditor = card.nextElementSibling;
-    if (existingEditor && existingEditor.classList.contains('story-edit-inline')) {
-        _quillStoryEdit = null;
-        existingEditor.remove();
+    const body = document.getElementById(`story-body-${storyId}`);
+    const chevron = document.getElementById(`story-chevron-${storyId}`);
+    if (!body) return;
+
+    // If already in edit mode, cancel
+    if (body.dataset.editing === 'true') {
+        cancelStoryInlineEdit(storyId);
         return;
     }
 
@@ -5185,33 +5187,66 @@ function handleEditStoryForStage(storyId) {
     const story = _stageStoriesCache.find(s => (s.story_id || s.id) === storyId);
     if (!story) return;
 
+    // Expand body if collapsed
+    body.style.display = 'block';
+    if (chevron) chevron.innerHTML = '&#x25BC;';
+
     // Use custom_content if set, otherwise fall back to original
     const editContent = story.custom_content || story.content || '';
+    const htmlContent = contentToHtml(editContent);
 
-    const editorDiv = document.createElement('div');
-    editorDiv.className = 'story-edit-inline';
-    editorDiv.innerHTML = `
+    body.dataset.editing = 'true';
+    body.innerHTML = `
         <div class="story-edit-label">Editing copy for this stage <span style="color:var(--text-muted);font-weight:400;">(original in Story Bank is unchanged)</span></div>
-        <div class="quill-resize-wrapper" id="story-edit-resize-${storyId}" style="min-height:160px;">
+        <div class="quill-resize-wrapper" id="story-edit-resize-${storyId}" style="min-height:200px;">
             <div id="story-edit-quill-${storyId}"></div>
             <div class="resize-handle" data-target="story-edit-resize-${storyId}"></div>
         </div>
         <div class="story-edit-actions">
             <button class="btn btn-success btn-sm" onclick="saveStoryEditForStage(${storyId})">Save</button>
-            <button class="btn btn-ghost btn-sm" onclick="_quillStoryEdit=null;this.closest('.story-edit-inline').remove()">Cancel</button>
+            <button class="btn btn-ghost btn-sm" onclick="cancelStoryInlineEdit(${storyId})">Cancel</button>
             ${story.custom_content ? `<button class="btn btn-ghost btn-sm btn-danger-hover" onclick="resetStoryToOriginal(${storyId})" title="Discard edits and revert to original">Reset to Original</button>` : ''}
         </div>
     `;
-    card.after(editorDiv);
 
-    // Initialize Quill for story editing
+    // Switch Edit button to "Cancel"
+    const editBtn = card.querySelector('.assigned-story-actions .btn:not(.btn-danger-hover):not(.btn-save-bank)');
+    if (editBtn && editBtn.textContent.trim() === 'Edit') {
+        editBtn.textContent = 'Cancel';
+        editBtn.title = 'Cancel editing';
+    }
+
+    // Initialize Quill
     _quillStoryEdit = initQuill(`story-edit-quill-${storyId}`, QUILL_FULL_TOOLBAR, 'Edit your story...');
     if (_quillStoryEdit) {
-        _quillStoryEdit.root.innerHTML = contentToHtml(editContent);
-        _quillStoryEdit.focus();
+        // Use dangerouslyPasteHTML instead of innerHTML to preserve all content
+        _quillStoryEdit.clipboard.dangerouslyPasteHTML(htmlContent);
+        _quillStoryEdit.setSelection(_quillStoryEdit.getLength(), 0); // cursor at end
     }
     _quillStoryEdit._storyId = storyId;
     initResizeHandles();
+}
+
+function cancelStoryInlineEdit(storyId) {
+    _quillStoryEdit = null;
+    const body = document.getElementById(`story-body-${storyId}`);
+    if (!body) return;
+    delete body.dataset.editing;
+
+    // Restore read-only content
+    const story = _stageStoriesCache.find(s => (s.story_id || s.id) === storyId);
+    const displayContent = story ? (story.custom_content || story.content || '') : '';
+    body.innerHTML = `<div class="markdown-body">${displayContent ? (looksLikeMarkdown(displayContent) ? marked.parse(displayContent) : displayContent) : '<em>No content</em>'}</div>`;
+
+    // Restore Edit button text
+    const card = document.querySelector(`.assigned-story-card[data-story-id="${storyId}"]`);
+    if (card) {
+        const editBtn = card.querySelector('.assigned-story-actions .btn:not(.btn-danger-hover):not(.btn-save-bank)');
+        if (editBtn && editBtn.textContent.trim() === 'Cancel') {
+            editBtn.textContent = 'Edit';
+            editBtn.title = 'Edit this copy';
+        }
+    }
 }
 
 async function saveStoryEditForStage(storyId) {
@@ -5223,9 +5258,24 @@ async function saveStoryEditForStage(storyId) {
         // Update cache
         const story = _stageStoriesCache.find(s => (s.story_id || s.id) === storyId);
         if (story) story.custom_content = content;
-        // Remove editor and re-render
         _quillStoryEdit = null;
-        renderAssignedStories();
+        // Restore body to read-only with new content
+        const body = document.getElementById(`story-body-${storyId}`);
+        if (body) {
+            delete body.dataset.editing;
+            body.innerHTML = `<div class="markdown-body">${content}</div>`;
+        }
+        // Update "edited" badge on the card
+        const card = document.querySelector(`.assigned-story-card[data-story-id="${storyId}"]`);
+        if (card) {
+            card.classList.add('has-custom-content');
+            const titleEl = card.querySelector('h4');
+            if (titleEl && !titleEl.querySelector('.custom-badge')) {
+                titleEl.insertAdjacentHTML('beforeend', ' <span class="custom-badge">edited</span>');
+            }
+            const editBtn = card.querySelector('.assigned-story-actions .btn:not(.btn-danger-hover):not(.btn-save-bank)');
+            if (editBtn) { editBtn.textContent = 'Edit'; editBtn.title = 'Edit this copy'; }
+        }
         showToast('Story copy saved', 'success');
     } catch (e) {
         showToast('Failed to save', 'error');
