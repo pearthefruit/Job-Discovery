@@ -381,7 +381,7 @@ End with this exact line (High + Medium IDs, best first):
     )
 
     try:
-        result = client.analyze_with_rotation(prompt, max_tokens=8192)
+        result = client.analyze_with_rotation(prompt, max_tokens=12000)
     except Exception as e:
         return jsonify({"error": f"Recommendation failed: {e}"}), 500
 

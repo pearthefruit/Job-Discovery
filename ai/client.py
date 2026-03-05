@@ -57,10 +57,12 @@ class AIClient:
             raise RuntimeError(f"{model} returned no candidates")
 
         finish_reason = candidates[0].get("finishReason", "")
+        text = candidates[0].get("content", {}).get("parts", [{}])[0].get("text", "")
+
         if finish_reason == "MAX_TOKENS":
             log.warning(f"{model} output truncated (hit maxOutputTokens={max_tokens})")
+            text += f"\n\n---\n*Output was truncated — {model} hit its token limit. Try again to get a higher-capacity model.*"
 
-        text = candidates[0].get("content", {}).get("parts", [{}])[0].get("text", "")
         self.last_model_used = model
         return text
 
