@@ -4500,6 +4500,14 @@ function initResizeHandles() {
 async function loadExpandedInterviewPhase(jobId) {
     currentInterviewJobId = jobId;
 
+    // Clear stale UI from previous job immediately
+    _stagesCache = [];
+    _stageStoriesCache = [];
+    if (window.storyEditor) window.storyEditor.destroyEditors();
+    const timelineEl = document.getElementById('stage-timeline-nodes');
+    if (timelineEl) timelineEl.innerHTML = '<div style="color:var(--text-muted);font-size:0.8rem;padding:0.5rem;">Loading stages...</div>';
+    showStageEmpty();
+
     // Load stages + insights in parallel
     const [stagesRes, insights] = await Promise.all([
         api.getStages(jobId),
