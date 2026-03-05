@@ -5722,6 +5722,32 @@ select.input option {
     border-color: rgba(255, 255, 255, 0.3);
 }
 
+/* Whiteboard drag-to-resize handle */
+.wb-resize-handle {
+    height: 8px;
+    cursor: ns-resize;
+    background: transparent;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    user-select: none;
+    border-radius: 0 0 8px 8px;
+}
+.wb-resize-handle::after {
+    content: '';
+    width: 40px;
+    height: 3px;
+    background: rgba(255, 255, 255, 0.15);
+    border-radius: 2px;
+    transition: background 0.15s;
+}
+.wb-resize-handle:hover::after {
+    background: rgba(255, 255, 255, 0.35);
+}
+.whiteboard-container.fullscreen .wb-resize-handle {
+    display: none;
+}
+
 /* =================== Mock Interviews =================== */
 .mock-interviews-list {
     display: flex;
@@ -5847,6 +5873,7 @@ select.input option {
 }
 
 .mock-whiteboard-container {
+    position: relative;
     margin-top: 8px;
     border-radius: 8px;
     overflow: hidden;
@@ -5854,6 +5881,66 @@ select.input option {
 
 .mock-whiteboard-container .whiteboard-iframe {
     height: 320px;
+}
+
+.mock-wb-fullscreen-btn {
+    position: absolute;
+    top: 8px;
+    right: 8px;
+    z-index: 10;
+    background: rgba(30, 30, 30, 0.7);
+    border: 1px solid rgba(255, 255, 255, 0.15);
+    color: #fff;
+    padding: 4px 10px;
+    border-radius: 6px;
+    font-size: 0.8rem;
+    cursor: pointer;
+    backdrop-filter: blur(6px);
+    transition: background 0.15s;
+}
+.mock-wb-fullscreen-btn:hover {
+    background: rgba(60, 60, 60, 0.9);
+}
+
+.mock-whiteboard-container.fullscreen {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100vw;
+    height: 100vh;
+    z-index: 9999;
+    border-radius: 0;
+    background: #1e1e1e;
+    margin: 0;
+}
+.mock-whiteboard-container.fullscreen .whiteboard-iframe {
+    height: 100%;
+    border: none;
+    border-radius: 0;
+}
+.mock-whiteboard-container.fullscreen .mock-wb-fullscreen-btn {
+    display: none;
+}
+.mock-whiteboard-container.fullscreen .whiteboard-fullscreen-exit {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    position: absolute;
+    top: 16px;
+    right: 16px;
+    z-index: 10000;
+    background: rgba(30, 30, 30, 0.9);
+    border: 1px solid rgba(255, 255, 255, 0.2);
+    color: #fff;
+    padding: 8px 16px;
+    border-radius: 8px;
+    font-size: 0.85rem;
+    font-weight: 500;
+    cursor: pointer;
+    backdrop-filter: blur(8px);
+}
+.mock-whiteboard-container.fullscreen .wb-resize-handle {
+    display: none;
 }
 
 .mock-mini-debrief {

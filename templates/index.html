@@ -642,9 +642,10 @@
                                     <button class="btn btn-ghost btn-sm" onclick="event.stopPropagation();toggleWhiteboardFullscreen()" title="Fullscreen">&#x26F6;</button>
                                 </div>
                                 <div class="section-collapsible" id="body-whiteboard" style="display:none;">
-                                    <div class="whiteboard-container" id="stage-whiteboard-container">
+                                    <div class="whiteboard-container whiteboard-resizable" id="stage-whiteboard-container">
                                         <iframe id="stage-whiteboard-iframe" class="whiteboard-iframe" src="/static/excalidraw.html" loading="lazy"></iframe>
                                         <button class="whiteboard-fullscreen-exit" onclick="event.stopPropagation();toggleWhiteboardFullscreen()">&#x2715; Exit Fullscreen</button>
+                                        <div class="wb-resize-handle" data-wb-target="stage-whiteboard-container"></div>
                                     </div>
                                 </div>
                             </div>

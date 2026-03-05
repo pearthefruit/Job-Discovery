@@ -4613,6 +4613,7 @@ async function selectStage(stageId) {
 
     // Load whiteboard + mock interviews
     initStageWhiteboard(stage);
+    initWhiteboardResizeHandles();
     loadMockInterviews(stageId);
 
     // Update section visibility based on status
@@ -6205,6 +6206,59 @@ function toggleWhiteboardFullscreen() {
     }
 }
 
+function toggleMockWhiteboardFullscreen(mockId) {
+    const container = document.getElementById(`mock-wb-container-${mockId}`);
+    if (!container) return;
+    const isFullscreen = container.classList.toggle('fullscreen');
+
+    if (isFullscreen) {
+        const clickGuard = (e) => { e.stopPropagation(); };
+        container.addEventListener('click', clickGuard);
+        const handler = (e) => {
+            if (e.key === 'Escape') {
+                e.stopPropagation();
+                e.preventDefault();
+                container.classList.remove('fullscreen');
+                container.removeEventListener('click', clickGuard);
+                document.removeEventListener('keydown', handler);
+            }
+        };
+        document.addEventListener('keydown', handler);
+    }
+}
+
+function initWhiteboardResizeHandles() {
+    document.querySelectorAll('.wb-resize-handle').forEach(handle => {
+        if (handle._wbResizeInit) return;
+        handle._wbResizeInit = true;
+        handle.addEventListener('mousedown', (e) => {
+            e.preventDefault();
+            const targetId = handle.dataset.wbTarget;
+            const container = document.getElementById(targetId);
+            if (!container) return;
+            const iframe = container.querySelector('.whiteboard-iframe');
+            if (!iframe) return;
+            const startY = e.clientY;
+            const startH = iframe.offsetHeight;
+            // Overlay to prevent iframe from swallowing mouse events
+            const overlay = document.createElement('div');
+            overlay.style.cssText = 'position:fixed;top:0;left:0;width:100%;height:100%;z-index:10000;cursor:ns-resize;';
+            document.body.appendChild(overlay);
+            function onMove(ev) {
+                const newH = Math.max(200, startH + (ev.clientY - startY));
+                iframe.style.height = newH + 'px';
+            }
+            function onUp() {
+                overlay.remove();
+                document.removeEventListener('mousemove', onMove);
+                document.removeEventListener('mouseup', onUp);
+            }
+            document.addEventListener('mousemove', onMove);
+            document.addEventListener('mouseup', onUp);
+        });
+    });
+}
+
 // =================== Mock Interviews ===================
 
 let _mockInterviewsCache = [];
@@ -6279,8 +6333,11 @@ function renderMockCard(mock) {
                             ${mock.whiteboard ? 'checked' : ''}> Whiteboard
                     </label>
                 </div>
-                <div class="mock-whiteboard-container" id="mock-wb-container-${mock.id}" style="display:${mock.whiteboard ? 'block' : 'none'};">
+                <div class="mock-whiteboard-container whiteboard-resizable" id="mock-wb-container-${mock.id}" style="display:${mock.whiteboard ? 'block' : 'none'};">
+                    <button class="mock-wb-fullscreen-btn" onclick="event.stopPropagation();toggleMockWhiteboardFullscreen(${mock.id})" title="Fullscreen">&#x26F6;</button>
                     <iframe id="mock-wb-iframe-${mock.id}" class="whiteboard-iframe" loading="lazy"></iframe>
+                    <button class="whiteboard-fullscreen-exit" onclick="event.stopPropagation();toggleMockWhiteboardFullscreen(${mock.id})">&#x2715; Exit Fullscreen</button>
+                    <div class="wb-resize-handle" data-wb-target="mock-wb-container-${mock.id}"></div>
                 </div>
 
                 <div class="mock-mini-debrief">
@@ -6356,6 +6413,7 @@ function initMockEditors(mockId) {
     }
 
     initResizeHandles();
+    initWhiteboardResizeHandles();
 
     // Load mock whiteboard if exists
     if (mock.whiteboard) {
