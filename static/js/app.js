@@ -5267,6 +5267,7 @@ async function handlePromoteToBank(storyId) {
 // =================== Collapsible Sections ===================
 
 const _sectionStates = { interviewer: false, questions: false, stories: true, whiteboard: false, mocks: false };
+let _whiteboardInitPending = false;
 
 function toggleSection(name) {
     _sectionStates[name] = !_sectionStates[name];
@@ -5274,6 +5275,17 @@ function toggleSection(name) {
     const chevron = document.getElementById(`chevron-${name}`);
     if (body) body.style.display = _sectionStates[name] ? '' : 'none';
     if (chevron) chevron.innerHTML = _sectionStates[name] ? '&#x25BC;' : '&#x25B6;';
+
+    // Whiteboard iframe needs to be visible before it can load (loading="lazy")
+    if (name === 'whiteboard' && _sectionStates[name] && _whiteboardInitPending) {
+        _whiteboardInitPending = false;
+        const iframe = document.getElementById('stage-whiteboard-iframe');
+        if (iframe) {
+            const src = iframe.getAttribute('data-src') || '/static/excalidraw.html';
+            iframe.src = '';
+            requestAnimationFrame(() => { iframe.src = src; });
+        }
+    }
 }
 
 // =================== Interviewer Intel ===================
@@ -6125,11 +6137,17 @@ function initStageWhiteboard(stage) {
         try { scene = JSON.parse(stage.whiteboard); } catch (e) { scene = null; }
     }
 
-    // If iframe is already loaded, post immediately; otherwise wait for ready message
     _whiteboardPendingScene = scene;
 
+    // If the whiteboard section is collapsed, defer iframe load until it's expanded
+    // (loading="lazy" iframes inside display:none won't actually load)
+    if (!_sectionStates.whiteboard) {
+        _whiteboardInitPending = true;
+        return;
+    }
+
     // Force reload iframe to reset state for new stage
-    const src = iframe.src;
+    const src = iframe.src || '/static/excalidraw.html';
     iframe.src = '';
     requestAnimationFrame(() => { iframe.src = src; });
 }
