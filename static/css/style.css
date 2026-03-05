@@ -5248,8 +5248,9 @@ select.input option {
 
 /* Story TipTap content (always editable, no border/chrome) */
 .story-tiptap-wrapper {
-    min-height: 40px;
     cursor: text;
+    border-top: 1px solid var(--border-glass);
+    padding-top: 0.5rem;
 }
 
 .story-tiptap-wrapper .ProseMirror {
@@ -5398,12 +5399,6 @@ select.input option {
 }
 .assigned-story-body > * {
     overflow: hidden;
-}
-/* Border separator only when expanded */
-.assigned-story-body.expanded > * {
-    margin-top: 0.5rem;
-    padding-top: 0.5rem;
-    border-top: 1px solid var(--border-glass);
 }
 
 .assigned-story-actions {
