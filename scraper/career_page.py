@@ -75,7 +75,7 @@ class CareerPageScraper:
         if not html:
             self._error(f"Failed to load {source['url'][:60]}")
             # Try ATS APIs / Workday even if page fetch failed (the page might be pure SPA)
-            fallback_results = self._try_fallback_apis(source, keywords)
+            fallback_results = self._try_fallback_apis(source, keywords, filtered_out=filtered_out)
             if fallback_results:
                 return fallback_results, filtered_out
             return [], filtered_out
@@ -85,7 +85,7 @@ class CareerPageScraper:
             return [], filtered_out
 
         # Phase 1b: Phenom People detection (embedded JSON extraction)
-        phenom_jobs = self._try_phenom_extraction(html, source, keywords)
+        phenom_jobs = self._try_phenom_extraction(html, source, keywords, filtered_out=filtered_out)
         if phenom_jobs is not None:
             return phenom_jobs, filtered_out
 
@@ -113,7 +113,7 @@ class CareerPageScraper:
                 else:
                     filtered_out.append(job_data)
             if not discovered:
-                fallback_results = self._try_fallback_apis(source, keywords, html)
+                fallback_results = self._try_fallback_apis(source, keywords, html, filtered_out=filtered_out)
                 if fallback_results:
                     discovered.extend(fallback_results)
             return discovered, filtered_out
@@ -167,7 +167,7 @@ class CareerPageScraper:
 
         # Phase 4: ATS API + Workday fallback if nothing found
         if not discovered:
-            fallback_results = self._try_fallback_apis(source, keywords, html)
+            fallback_results = self._try_fallback_apis(source, keywords, html, filtered_out=filtered_out)
             if fallback_results:
                 discovered.extend(fallback_results)
 
@@ -680,7 +680,7 @@ class CareerPageScraper:
 
     # =================== Platform-Specific Extraction ===================
 
-    def _try_phenom_extraction(self, html, source, keywords):
+    def _try_phenom_extraction(self, html, source, keywords, filtered_out=None):
         """Detect Phenom People platform and extract jobs from embedded JSON.
 
         Phenom People (used by HelloFresh, etc.) renders job listings client-side
@@ -733,6 +733,20 @@ class CareerPageScraper:
                 self._info(f"Excluded: {title}")
                 continue
             if not self._matches_keywords(title, keywords):
+                if filtered_out is not None:
+                    job_id = job.get('jobId', '')
+                    city = job.get('city', '')
+                    state = job.get('state', '')
+                    country = job.get('country', '')
+                    loc_parts = [p for p in [city, state, country] if p]
+                    filtered_out.append({
+                        'url': f"{base_url}{locale_path}/job/{job_id}" if job_id else '',
+                        'title': title,
+                        'company': source.get('company_name', ''),
+                        'location': ', '.join(loc_parts),
+                        'salary': None,
+                        'description': '',
+                    })
                 continue
 
             job_id = job.get('jobId', '')
@@ -789,14 +803,14 @@ class CareerPageScraper:
 
     # =================== ATS API Probe Fallback ===================
 
-    def _try_fallback_apis(self, source, keywords, html=None):
+    def _try_fallback_apis(self, source, keywords, html=None, filtered_out=None):
         """Try ATS API probes (Greenhouse/Lever/Ashby), then Workday as last resort."""
-        ats_results = self._try_ats_api_probe(source, keywords, html)
+        ats_results = self._try_ats_api_probe(source, keywords, html, filtered_out=filtered_out)
         if ats_results:
             return ats_results
-        return self._try_workday_api(source, keywords)
+        return self._try_workday_api(source, keywords, filtered_out=filtered_out)
 
-    def _try_ats_api_probe(self, source, keywords, html=None):
+    def _try_ats_api_probe(self, source, keywords, html=None, filtered_out=None):
         """Probe Greenhouse, Lever, and Ashby APIs using company slug."""
         slugs = self._generate_ats_slugs(source['url'], source.get('company_name', ''))
         if not slugs:
@@ -810,7 +824,7 @@ class CareerPageScraper:
 
         for slug in slugs:
             for probe_fn in [self._probe_greenhouse, self._probe_lever, self._probe_ashby]:
-                result = probe_fn(slug, source, keywords)
+                result = probe_fn(slug, source, keywords, filtered_out=filtered_out)
                 if result:
                     return result
 
@@ -847,7 +861,7 @@ class CareerPageScraper:
 
         return slugs[:3]  # Cap to limit probe time
 
-    def _probe_greenhouse(self, slug, source, keywords):
+    def _probe_greenhouse(self, slug, source, keywords, filtered_out=None):
         """Probe Greenhouse API for a given slug. Returns list of job dicts or None."""
         try:
             url = f"https://boards-api.greenhouse.io/v1/boards/{slug}/jobs?content=true"
@@ -863,7 +877,18 @@ class CareerPageScraper:
             discovered = []
             for job in jobs:
                 title = job.get('title', '')
-                if self._matches_exclude(title) or not self._matches_keywords(title, keywords):
+                if self._matches_exclude(title):
+                    continue
+                if not self._matches_keywords(title, keywords):
+                    if filtered_out is not None:
+                        filtered_out.append({
+                            'url': job.get('absolute_url', ''),
+                            'title': title,
+                            'company': source.get('company_name', ''),
+                            'location': '',
+                            'salary': None,
+                            'description': '',
+                        })
                     continue
 
                 content_html = job.get('content', '')
@@ -894,7 +919,7 @@ class CareerPageScraper:
         except Exception:
             return None
 
-    def _probe_lever(self, slug, source, keywords):
+    def _probe_lever(self, slug, source, keywords, filtered_out=None):
         """Probe Lever API for a given slug. Returns list of job dicts or None."""
         try:
             url = f"https://api.lever.co/v0/postings/{slug}?mode=json"
@@ -909,7 +934,18 @@ class CareerPageScraper:
             discovered = []
             for posting in postings:
                 title = posting.get('text', '')
-                if self._matches_exclude(title) or not self._matches_keywords(title, keywords):
+                if self._matches_exclude(title):
+                    continue
+                if not self._matches_keywords(title, keywords):
+                    if filtered_out is not None:
+                        filtered_out.append({
+                            'url': posting.get('hostedUrl', '') or posting.get('applyUrl', ''),
+                            'title': title,
+                            'company': source.get('company_name', ''),
+                            'location': (posting.get('categories', {}) or {}).get('location', ''),
+                            'salary': None,
+                            'description': '',
+                        })
                     continue
 
                 categories = posting.get('categories', {}) or {}
@@ -944,7 +980,7 @@ class CareerPageScraper:
         except Exception:
             return None
 
-    def _probe_ashby(self, slug, source, keywords):
+    def _probe_ashby(self, slug, source, keywords, filtered_out=None):
         """Probe Ashby API for a given slug. Returns list of job dicts or None."""
         try:
             url = f"https://api.ashbyhq.com/posting-api/job-board/{slug}?includeCompensation=true"
@@ -960,7 +996,18 @@ class CareerPageScraper:
             discovered = []
             for job in jobs:
                 title = job.get('title', '')
-                if self._matches_exclude(title) or not self._matches_keywords(title, keywords):
+                if self._matches_exclude(title):
+                    continue
+                if not self._matches_keywords(title, keywords):
+                    if filtered_out is not None:
+                        filtered_out.append({
+                            'url': job.get('jobUrl', ''),
+                            'title': title,
+                            'company': source.get('company_name', ''),
+                            'location': job.get('location', ''),
+                            'salary': None,
+                            'description': '',
+                        })
                     continue
 
                 location = job.get('location', '')
@@ -990,7 +1037,7 @@ class CareerPageScraper:
 
     # =================== Workday API Fallback ===================
 
-    def _try_workday_api(self, source, keywords):
+    def _try_workday_api(self, source, keywords, filtered_out=None):
         """Auto-detect and scrape via Workday API. Returns list of job dicts or empty list."""
         company_slug = self._extract_workday_slug(source['url'], source.get('company_name', ''))
         if not company_slug:
@@ -1035,7 +1082,7 @@ class CareerPageScraper:
                         data = test_resp.json()
                         if 'jobPostings' in data and data.get('total', 0) > 0:
                             self._info(f"Workday API found at wd{wd_num}/{site_name} ({data['total']} total jobs)")
-                            return self._scrape_workday_jobs(api_url, base, site_name, source, keywords)
+                            return self._scrape_workday_jobs(api_url, base, site_name, source, keywords, filtered_out=filtered_out)
                 except httpx.ConnectError:
                     wd_reachable = False
                     break  # DNS/connection failed, skip all site names for this wd number
@@ -1050,7 +1097,7 @@ class CareerPageScraper:
         self._info("No Workday API found for this site")
         return []
 
-    def _scrape_workday_jobs(self, api_url, base_url, site_name, source, keywords):
+    def _scrape_workday_jobs(self, api_url, base_url, site_name, source, keywords, filtered_out=None):
         """Scrape jobs from a discovered Workday API endpoint."""
         discovered = []
         all_postings = []
@@ -1104,6 +1151,16 @@ class CareerPageScraper:
                     continue
                 if not self._matches_keywords(title, keywords):
                     self._info(f"Filtered out: {title}")
+                    if filtered_out is not None:
+                        job_url = f"{base_url}/en-US/{site_name}{ext_path}"
+                        filtered_out.append({
+                            'url': job_url,
+                            'title': title,
+                            'company': source.get('company_name', ''),
+                            'location': location,
+                            'salary': None,
+                            'description': '',
+                        })
                     continue
 
                 # Build the public-facing job URL
