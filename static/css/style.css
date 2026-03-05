@@ -263,6 +263,72 @@ body {
     font-weight: 500;
 }
 
+/* AI Usage Stats */
+.ai-usage-card {
+    margin-bottom: 1rem;
+    padding: 1rem;
+}
+.ai-usage-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 0.75rem;
+}
+.ai-usage-header h3 {
+    margin: 0;
+    font-size: 1rem;
+    font-weight: 600;
+}
+.ai-usage-summary {
+    margin-bottom: 0;
+}
+.stat-card.mini {
+    padding: 0.5rem;
+}
+.stat-card.mini .stat-value {
+    font-size: 1.2rem;
+}
+#ai-usage-detail {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+    gap: 1rem;
+    margin-top: 1rem;
+    padding-top: 1rem;
+    border-top: 1px solid var(--border);
+}
+.ai-usage-table-wrap h4 {
+    font-size: 0.8rem;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    color: var(--text-secondary);
+    margin: 0 0 0.5rem;
+}
+.ai-usage-table {
+    width: 100%;
+    font-size: 0.8rem;
+    border-collapse: collapse;
+}
+.ai-usage-table th,
+.ai-usage-table td {
+    padding: 0.3rem 0.5rem;
+    text-align: left;
+    border-bottom: 1px solid var(--border);
+}
+.ai-usage-table th {
+    font-weight: 600;
+    color: var(--text-secondary);
+    font-size: 0.7rem;
+    text-transform: uppercase;
+}
+.ai-usage-table td:nth-child(2),
+.ai-usage-table td:nth-child(3),
+.ai-usage-table td:nth-child(4),
+.ai-usage-table th:nth-child(2),
+.ai-usage-table th:nth-child(3),
+.ai-usage-table th:nth-child(4) {
+    text-align: right;
+}
+
 /* Forms */
 .form-row {
     display: flex;

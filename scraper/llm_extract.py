@@ -53,8 +53,9 @@ CLAUDE_API_URL = "https://api.anthropic.com/v1/messages"
 class LLMExtractor:
     """Extracts structured job data from page text using a multi-model fallback chain."""
 
-    def __init__(self, log=None):
+    def __init__(self, log=None, usage_callback=None):
         self.log = log
+        self.usage_callback = usage_callback  # fn(call_type, provider, model, key_hint, prompt_tok, comp_tok, total_tok)
         self.api_keys = [k for k in LLM_API_KEYS if k and k != "PLACEHOLDER_API_KEY"]
         self.api_key = self.api_keys[0] if self.api_keys else GEMINI_API_KEY  # backward compat
         self.enabled = bool(LLM_EXTRACTION_ENABLED and self.api_keys)
@@ -326,6 +327,13 @@ PAGE DATA:
             text = candidates[0].get("content", {}).get("parts", [{}])[0].get("text", "")
             if text:
                 self._info(f"[LLM] {model}/...{key[-4:]} responded successfully")
+                if self.usage_callback:
+                    try:
+                        um = data.get("usageMetadata", {})
+                        self.usage_callback('llm_extract', 'gemini', model, f"...{key[-4:]}",
+                                            um.get('promptTokenCount', 0), um.get('candidatesTokenCount', 0), um.get('totalTokenCount', 0))
+                    except Exception:
+                        pass
             return text or None
 
         except httpx.TimeoutException:
@@ -370,6 +378,14 @@ PAGE DATA:
             text = content[0].get("text", "")
             if text:
                 self._info("[LLM] Claude responded successfully")
+                if self.usage_callback:
+                    try:
+                        cu = data.get("usage", {})
+                        self.usage_callback('llm_extract', 'claude', CLAUDE_MODEL, f"...{CLAUDE_API_KEY[-4:]}",
+                                            cu.get('input_tokens', 0), cu.get('output_tokens', 0),
+                                            cu.get('input_tokens', 0) + cu.get('output_tokens', 0))
+                    except Exception:
+                        pass
             return text or None
 
         except httpx.TimeoutException:

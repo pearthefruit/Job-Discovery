@@ -128,6 +128,22 @@ CREATE TABLE IF NOT EXISTS job_blurbs (
     content TEXT NOT NULL
 );
 
+-- =================== AI Usage Tracking ===================
+
+CREATE TABLE IF NOT EXISTS api_usage_log (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    call_type TEXT NOT NULL,
+    provider TEXT NOT NULL,
+    model TEXT NOT NULL,
+    api_key_hint TEXT,
+    prompt_tokens INTEGER DEFAULT 0,
+    completion_tokens INTEGER DEFAULT 0,
+    total_tokens INTEGER DEFAULT 0,
+    job_id INTEGER,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY(job_id) REFERENCES job_history(id) ON DELETE SET NULL
+);
+
 -- =================== Indexes ===================
 
 CREATE INDEX IF NOT EXISTS idx_job_history_url_normalized ON job_history(job_url_normalized);
@@ -139,3 +155,5 @@ CREATE INDEX IF NOT EXISTS idx_applications_job ON applications(job_id);
 CREATE INDEX IF NOT EXISTS idx_resume_sections_resume ON resume_sections(resume_id);
 CREATE INDEX IF NOT EXISTS idx_story_versions_job ON story_versions(job_id);
 CREATE INDEX IF NOT EXISTS idx_story_versions_story ON story_versions(story_id);
+CREATE INDEX IF NOT EXISTS idx_api_usage_created ON api_usage_log(created_at);
+CREATE INDEX IF NOT EXISTS idx_api_usage_provider ON api_usage_log(provider);

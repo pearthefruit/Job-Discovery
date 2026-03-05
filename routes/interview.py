@@ -12,6 +12,24 @@ def init_app(database):
     db = database
 
 
+def _log_usage(client, call_type, job_id=None):
+    """Log AI API usage after a successful call."""
+    try:
+        u = client.last_usage or {}
+        db.log_api_usage(
+            call_type=call_type,
+            provider=u.get('provider', client.last_provider or 'unknown'),
+            model=client.last_model_used or 'unknown',
+            api_key_hint=client.last_key_hint or '',
+            prompt_tokens=u.get('prompt_tokens', 0),
+            completion_tokens=u.get('completion_tokens', 0),
+            total_tokens=u.get('total_tokens', 0),
+            job_id=job_id,
+        )
+    except Exception:
+        pass  # never break the main flow for logging
+
+
 # =================== STORIES API ===================
 
 @interview_bp.route("/api/stories", methods=["GET"])
@@ -181,6 +199,7 @@ RESUME:
         return jsonify({"error": f"Analysis failed: {e}"}), 500
 
     result = _strip_preamble(result)
+    _log_usage(client, 'prep_guide', job_id)
     insight_id = db.add_interview_insight(job_id, 'prep', framework, result)
     return jsonify({"analysis": result, "framework": framework, "insight_id": insight_id, "model": client.last_model_used})
 
@@ -243,6 +262,7 @@ Generate a complete SAIL story based on the bullet point. Include:
     except Exception as e:
         return jsonify({"error": f"Story generation failed: {e}"}), 500
 
+    _log_usage(client, 'story_gen')
     return jsonify({"generated_content": result, "title": title or "Untitled Story"})
 
 
@@ -386,6 +406,7 @@ End with this exact line (High + Medium IDs, best first):
         return jsonify({"error": f"Recommendation failed: {e}"}), 500
 
     result = _strip_preamble(result)
+    _log_usage(client, 'rank_stories', job_id)
 
     # Extract recommended story IDs from the AI's structured output
     valid_ids = [s['id'] for s in all_stories]
@@ -504,6 +525,7 @@ Keep the same SAIL structure but adjust emphasis, language, and framing.
     except Exception as e:
         return jsonify({"error": f"Reframing failed: {e}"}), 500
 
+    _log_usage(client, 'reframe', job_id)
     return jsonify({"reframed_content": result, "story_id": story_id})
 
 
@@ -569,6 +591,7 @@ Generate a complete SAIL story based on the bullet point. Ask yourself what deta
     except Exception as e:
         return jsonify({"error": f"Story builder failed: {e}"}), 500
 
+    _log_usage(client, 'story_build')
     return jsonify({"generated_content": result})
 
 

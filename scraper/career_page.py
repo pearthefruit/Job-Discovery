@@ -37,9 +37,15 @@ class CareerPageScraper:
             timeout=httpx.Timeout(REQUEST_TIMEOUT_SECONDS, connect=5.0),
             follow_redirects=True,
         )
-        self.llm = LLMExtractor(log)
+        self.llm = LLMExtractor(log, usage_callback=self._log_llm_usage)
         self.llm.set_http_client(self.http)
         self._llm_used_for = set()  # Track domains that needed LLM extraction
+
+    def _log_llm_usage(self, call_type, provider, model, key_hint, prompt_tok, comp_tok, total_tok):
+        try:
+            self.db.log_api_usage(call_type, provider, model, key_hint, prompt_tok, comp_tok, total_tok)
+        except Exception:
+            pass
 
     def _info(self, msg):
         if self.log:

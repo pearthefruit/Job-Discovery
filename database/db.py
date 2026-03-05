@@ -125,6 +125,22 @@ class JobDiscoveryDB:
                 FOREIGN KEY(stage_id) REFERENCES interview_stages(id) ON DELETE CASCADE
             )""")
             conn.execute("CREATE INDEX IF NOT EXISTS idx_mock_interviews_stage ON mock_interviews(stage_id)")
+            # API usage tracking table
+            conn.execute("""CREATE TABLE IF NOT EXISTS api_usage_log (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                call_type TEXT NOT NULL,
+                provider TEXT NOT NULL,
+                model TEXT NOT NULL,
+                api_key_hint TEXT,
+                prompt_tokens INTEGER DEFAULT 0,
+                completion_tokens INTEGER DEFAULT 0,
+                total_tokens INTEGER DEFAULT 0,
+                job_id INTEGER,
+                created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                FOREIGN KEY(job_id) REFERENCES job_history(id) ON DELETE SET NULL
+            )""")
+            conn.execute("CREATE INDEX IF NOT EXISTS idx_api_usage_created ON api_usage_log(created_at)")
+            conn.execute("CREATE INDEX IF NOT EXISTS idx_api_usage_provider ON api_usage_log(provider)")
 
     # --- Target URLs ---
 
@@ -509,6 +525,57 @@ class JobDiscoveryDB:
                 "SELECT COUNT(*) as cnt FROM job_history WHERE status = 'rejected'"
             ).fetchone()["cnt"]
             return stages
+
+    # --- AI Usage Tracking ---
+
+    def log_api_usage(self, call_type, provider, model, api_key_hint='',
+                      prompt_tokens=0, completion_tokens=0, total_tokens=0, job_id=None):
+        with self.get_connection() as conn:
+            conn.execute(
+                """INSERT INTO api_usage_log
+                   (call_type, provider, model, api_key_hint, prompt_tokens, completion_tokens, total_tokens, job_id)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
+                (call_type, provider, model, api_key_hint,
+                 prompt_tokens, completion_tokens, total_tokens, job_id),
+            )
+
+    def get_ai_usage_stats(self):
+        with self.get_connection() as conn:
+            total_calls = conn.execute("SELECT COUNT(*) as cnt FROM api_usage_log").fetchone()["cnt"]
+            total_tokens = conn.execute("SELECT COALESCE(SUM(total_tokens),0) as s FROM api_usage_log").fetchone()["s"]
+            today_calls = conn.execute(
+                "SELECT COUNT(*) as cnt FROM api_usage_log WHERE date(created_at, 'localtime') = date('now', 'localtime')"
+            ).fetchone()["cnt"]
+            today_tokens = conn.execute(
+                "SELECT COALESCE(SUM(total_tokens),0) as s FROM api_usage_log WHERE date(created_at, 'localtime') = date('now', 'localtime')"
+            ).fetchone()["s"]
+
+            by_model = [dict(r) for r in conn.execute(
+                "SELECT model, COUNT(*) as calls, COALESCE(SUM(total_tokens),0) as tokens FROM api_usage_log GROUP BY model ORDER BY calls DESC"
+            ).fetchall()]
+
+            by_type = [dict(r) for r in conn.execute(
+                "SELECT call_type, COUNT(*) as calls, COALESCE(SUM(total_tokens),0) as tokens FROM api_usage_log GROUP BY call_type ORDER BY calls DESC"
+            ).fetchall()]
+
+            by_key = [dict(r) for r in conn.execute(
+                "SELECT api_key_hint as key_hint, COUNT(*) as calls, COALESCE(SUM(total_tokens),0) as tokens FROM api_usage_log WHERE api_key_hint IS NOT NULL GROUP BY api_key_hint ORDER BY calls DESC"
+            ).fetchall()]
+
+            recent = [dict(r) for r in conn.execute(
+                "SELECT call_type, provider, model, prompt_tokens, completion_tokens, total_tokens, created_at FROM api_usage_log ORDER BY created_at DESC LIMIT 10"
+            ).fetchall()]
+
+            return {
+                "total_calls": total_calls,
+                "total_tokens": total_tokens,
+                "today_calls": today_calls,
+                "today_tokens": today_tokens,
+                "by_model": by_model,
+                "by_type": by_type,
+                "by_key": by_key,
+                "recent": recent,
+            }
 
     # --- Resumes ---
 

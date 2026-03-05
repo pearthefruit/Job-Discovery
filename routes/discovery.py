@@ -334,6 +334,12 @@ def get_pipeline_stats():
     return jsonify(stats)
 
 
+@discovery_bp.route("/api/ai-usage-stats", methods=["GET"])
+def get_ai_usage_stats():
+    stats = db.get_ai_usage_stats()
+    return jsonify(stats)
+
+
 # =================== SCRAPER CONTROL API ===================
 
 @discovery_bp.route("/api/scraper/run", methods=["POST"])
@@ -550,6 +556,20 @@ def reformat_job_description(job_id):
                 formatted = candidates[0].get("content", {}).get("parts", [{}])[0].get("text", "")
                 if not formatted:
                     return jsonify({"error": "AI returned empty response"}), 502
+
+                # Log usage
+                try:
+                    usage_meta = data.get("usageMetadata", {})
+                    db.log_api_usage(
+                        call_type='jd_reformat', provider='gemini', model=model,
+                        api_key_hint=f"...{key[-4:]}",
+                        prompt_tokens=usage_meta.get('promptTokenCount', 0),
+                        completion_tokens=usage_meta.get('candidatesTokenCount', 0),
+                        total_tokens=usage_meta.get('totalTokenCount', 0),
+                        job_id=job_id,
+                    )
+                except Exception:
+                    pass
 
                 # Save the reformatted description
                 db.update_job_description(job_id, formatted)

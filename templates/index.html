@@ -59,6 +59,33 @@
             </div>
         </div>
 
+        <!-- AI Usage Stats -->
+        <div id="ai-usage-stats" class="card ai-usage-card">
+            <div class="ai-usage-header">
+                <h3>AI Usage</h3>
+                <button id="ai-usage-toggle-btn" class="btn btn-ghost btn-sm" onclick="toggleAIUsageDetail()">View Details</button>
+            </div>
+            <div class="stats-row ai-usage-summary">
+                <div class="stat-card mini">
+                    <div class="stat-value" id="ai-stat-calls-today">0</div>
+                    <div class="stat-label">Calls Today</div>
+                </div>
+                <div class="stat-card mini">
+                    <div class="stat-value" id="ai-stat-tokens-today">0</div>
+                    <div class="stat-label">Tokens Today</div>
+                </div>
+                <div class="stat-card mini">
+                    <div class="stat-value" id="ai-stat-calls-total">0</div>
+                    <div class="stat-label">Total Calls</div>
+                </div>
+                <div class="stat-card mini">
+                    <div class="stat-value" id="ai-stat-tokens-total">0</div>
+                    <div class="stat-label">Total Tokens</div>
+                </div>
+            </div>
+            <div id="ai-usage-detail" style="display:none;"></div>
+        </div>
+
         <!-- Scraper Control -->
         <div class="card scraper-control">
             <div class="scraper-header">

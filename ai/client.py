@@ -29,6 +29,9 @@ class AIClient:
         self.http = httpx.Client(timeout=TIMEOUT)
         # Track which model actually answered (for logging/UI)
         self.last_model_used = None
+        self.last_provider = None
+        self.last_key_hint = None
+        self.last_usage = {}
 
     def _call_gemini(self, key, model, prompt, temperature=0.3, max_tokens=65536):
         """Single Gemini API call. Returns text or raises."""
@@ -64,6 +67,15 @@ class AIClient:
             text += f"\n\n---\n*Output was truncated — {model} hit its token limit. Try again to get a higher-capacity model.*"
 
         self.last_model_used = model
+        self.last_provider = 'gemini'
+        self.last_key_hint = f"...{key[-4:]}"
+        usage_meta = data.get("usageMetadata", {})
+        self.last_usage = {
+            'provider': 'gemini',
+            'prompt_tokens': usage_meta.get('promptTokenCount', 0),
+            'completion_tokens': usage_meta.get('candidatesTokenCount', 0),
+            'total_tokens': usage_meta.get('totalTokenCount', 0),
+        }
         return text
 
     def analyze_gemini(self, prompt, temperature=0.3, max_tokens=65536, retries=2):
@@ -153,6 +165,15 @@ class AIClient:
             raise RuntimeError("Claude returned no content")
 
         self.last_model_used = self.claude_model
+        self.last_provider = 'claude'
+        self.last_key_hint = f"...{self.claude_api_key[-4:]}" if self.claude_api_key else None
+        usage_data = data.get("usage", {})
+        self.last_usage = {
+            'provider': 'claude',
+            'prompt_tokens': usage_data.get('input_tokens', 0),
+            'completion_tokens': usage_data.get('output_tokens', 0),
+            'total_tokens': usage_data.get('input_tokens', 0) + usage_data.get('output_tokens', 0),
+        }
         return content[0].get("text", "")
 
     # Convenience aliases (backward compat)

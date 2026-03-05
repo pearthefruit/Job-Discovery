@@ -147,6 +147,9 @@ const api = {
     async getOutcomes() {
         return fetch('/api/outcomes').then(r => r.json());
     },
+    async getAIUsageStats() {
+        return fetch('/api/ai-usage-stats').then(r => r.json());
+    },
 
     // --- Scraper ---
     async runScraper() {
@@ -493,12 +496,13 @@ function switchTab(tabName) {
 // =================== Discovery Tab ===================
 
 async function refreshDiscovery() {
-    const [stats, jobs, status, sources, filters] = await Promise.all([
+    const [stats, jobs, status, sources, filters, aiUsage] = await Promise.all([
         api.getStats(),
         api.getJobs(),
         api.getScraperStatus(),
         api.getSources(),
         api.getFilters(),
+        api.getAIUsageStats(),
     ]);
 
     document.getElementById('stat-total').textContent = stats.total_jobs;
@@ -509,11 +513,75 @@ async function refreshDiscovery() {
     document.getElementById('source-count-badge').textContent = sources.length;
     document.getElementById('filter-count-badge').textContent = filters.length;
 
+    renderAIUsageStats(aiUsage);
     renderJobs(jobs);
     renderScraperStatus(status);
     renderSources(sources);
     renderFilters(filters);
     loadFilteredJobs();
+}
+
+function _formatTokens(n) {
+    if (n >= 1_000_000) return (n / 1_000_000).toFixed(1) + 'M';
+    if (n >= 1_000) return (n / 1_000).toFixed(1) + 'K';
+    return String(n);
+}
+
+function renderAIUsageStats(data) {
+    const el = document.getElementById('ai-usage-stats');
+    if (!el) return;
+
+    document.getElementById('ai-stat-calls-today').textContent = data.today_calls;
+    document.getElementById('ai-stat-tokens-today').textContent = _formatTokens(data.today_tokens);
+    document.getElementById('ai-stat-calls-total').textContent = data.total_calls;
+    document.getElementById('ai-stat-tokens-total').textContent = _formatTokens(data.total_tokens);
+
+    const detail = document.getElementById('ai-usage-detail');
+    if (!detail) return;
+
+    let html = '';
+
+    if (data.by_model && data.by_model.length) {
+        html += `<div class="ai-usage-table-wrap"><h4>By Model</h4><table class="ai-usage-table">
+            <tr><th>Model</th><th>Calls</th><th>Tokens</th></tr>
+            ${data.by_model.map(r => `<tr><td>${escapeHtml(r.model)}</td><td>${r.calls}</td><td>${_formatTokens(r.tokens)}</td></tr>`).join('')}
+        </table></div>`;
+    }
+
+    if (data.by_type && data.by_type.length) {
+        html += `<div class="ai-usage-table-wrap"><h4>By Type</h4><table class="ai-usage-table">
+            <tr><th>Type</th><th>Calls</th><th>Tokens</th></tr>
+            ${data.by_type.map(r => `<tr><td>${escapeHtml(r.call_type)}</td><td>${r.calls}</td><td>${_formatTokens(r.tokens)}</td></tr>`).join('')}
+        </table></div>`;
+    }
+
+    if (data.by_key && data.by_key.length) {
+        html += `<div class="ai-usage-table-wrap"><h4>By Key</h4><table class="ai-usage-table">
+            <tr><th>Key</th><th>Calls</th><th>Tokens</th></tr>
+            ${data.by_key.map(r => `<tr><td>${escapeHtml(r.key_hint)}</td><td>${r.calls}</td><td>${_formatTokens(r.tokens)}</td></tr>`).join('')}
+        </table></div>`;
+    }
+
+    if (data.recent && data.recent.length) {
+        html += `<div class="ai-usage-table-wrap"><h4>Recent Calls</h4><table class="ai-usage-table">
+            <tr><th>Time</th><th>Type</th><th>Model</th><th>Tokens</th></tr>
+            ${data.recent.map(r => {
+                const t = r.created_at ? new Date(r.created_at + 'Z').toLocaleString([], {month:'short',day:'numeric',hour:'numeric',minute:'2-digit'}) : '';
+                return `<tr><td>${t}</td><td>${escapeHtml(r.call_type)}</td><td>${escapeHtml(r.model)}</td><td>${_formatTokens(r.total_tokens)}</td></tr>`;
+            }).join('')}
+        </table></div>`;
+    }
+
+    detail.innerHTML = html || '<div class="empty-state">No AI calls recorded yet.</div>';
+}
+
+function toggleAIUsageDetail() {
+    const detail = document.getElementById('ai-usage-detail');
+    const btn = document.getElementById('ai-usage-toggle-btn');
+    if (!detail) return;
+    const show = detail.style.display === 'none';
+    detail.style.display = show ? 'grid' : 'none';
+    if (btn) btn.textContent = show ? 'Hide Details' : 'View Details';
 }
 
 async function refreshToolkit() {

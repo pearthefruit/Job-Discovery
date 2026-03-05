@@ -12,6 +12,24 @@ def init_app(database):
     db = database
 
 
+def _log_usage(client, call_type, job_id=None):
+    """Log AI API usage after a successful call."""
+    try:
+        u = client.last_usage or {}
+        db.log_api_usage(
+            call_type=call_type,
+            provider=u.get('provider', client.last_provider or 'unknown'),
+            model=client.last_model_used or 'unknown',
+            api_key_hint=client.last_key_hint or '',
+            prompt_tokens=u.get('prompt_tokens', 0),
+            completion_tokens=u.get('completion_tokens', 0),
+            total_tokens=u.get('total_tokens', 0),
+            job_id=job_id,
+        )
+    except Exception:
+        pass
+
+
 # =================== RESUMES API ===================
 
 @application_bp.route("/api/resumes", methods=["GET"])
@@ -214,6 +232,7 @@ RESUME:
         phase1 = client.analyze_resume(APPLYING_PROMPT + "\n\n" + context)
     except Exception as e:
         return jsonify({"error": f"Phase 1 analysis failed: {e}"}), 500
+    _log_usage(client, 'resume_analysis', app_record.get('job_id'))
 
     # Phase 2: Bullet analysis
     bullet_context = f"""{BULLET_ANALYSIS_PROMPT}
@@ -234,6 +253,7 @@ RESUME:
             "analysis_phase2": None,
             "warning": f"Phase 2 failed: {e}",
         })
+    _log_usage(client, 'resume_analysis', app_record.get('job_id'))
 
     # Save both phases
     db.update_application(app_id, analysis_phase1=phase1, analysis_phase2=phase2)
