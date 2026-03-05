@@ -114,7 +114,7 @@ def clear_all_filters():
 
 @discovery_bp.route("/api/jobs", methods=["GET"])
 def get_jobs():
-    limit = request.args.get("limit", 100, type=int)
+    limit = request.args.get("limit", 10000, type=int)
     offset = request.args.get("offset", 0, type=int)
     search = request.args.get("search", "", type=str)
     stage = request.args.get("stage", "", type=str)

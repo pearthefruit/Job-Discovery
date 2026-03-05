@@ -215,7 +215,7 @@ class JobDiscoveryDB:
             ).fetchone()
             return dict(row) if row else None
 
-    def get_all_jobs(self, limit=100, offset=0):
+    def get_all_jobs(self, limit=10000, offset=0):
         with self.get_connection() as conn:
             rows = conn.execute(
                 "SELECT * FROM job_history ORDER BY date_found DESC LIMIT ? OFFSET ?",
@@ -476,7 +476,7 @@ class JobDiscoveryDB:
         with self.get_connection() as conn:
             total = conn.execute("SELECT COUNT(*) as cnt FROM job_history").fetchone()["cnt"]
             today = conn.execute(
-                "SELECT COUNT(*) as cnt FROM job_history WHERE date(date_found) = date('now')"
+                "SELECT COUNT(*) as cnt FROM job_history WHERE date(date_found, 'localtime') = date('now', 'localtime')"
             ).fetchone()["cnt"]
             sources = conn.execute(
                 "SELECT COUNT(*) as cnt FROM target_urls WHERE is_active = 1"

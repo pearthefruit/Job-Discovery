@@ -3958,8 +3958,10 @@ select.input option {
 }
 
 .jd-panel {
-    flex: 1;
-    min-width: 0;
+    flex: none;
+    width: 30%;
+    min-width: 250px;
+    max-width: 60%;
     border-right: 1px solid var(--border-glass);
     background: var(--bg-glass);
     display: flex;

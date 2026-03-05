@@ -106,10 +106,10 @@ const api = {
     // --- Jobs ---
     async getJobs(search = '', stage = '') {
         const params = new URLSearchParams();
+        params.set('limit', '10000');
         if (search) params.set('search', search);
         if (stage) params.set('stage', stage);
-        const qs = params.toString();
-        return fetch(`/api/jobs${qs ? '?' + qs : ''}`).then(r => r.json());
+        return fetch(`/api/jobs?${params.toString()}`).then(r => r.json());
     },
     async updateJobStatus(id, status) {
         return fetch(`/api/jobs/${id}/status`, {
@@ -1763,6 +1763,8 @@ async function toggleJDPanel() {
     if (_jdPanelVisible) {
         container.classList.add('jd-visible');
         panel.style.display = '';
+        const savedWidth = localStorage.getItem('jdPanelWidth');
+        if (savedWidth) panel.style.width = savedWidth + 'px';
         if (resizeHandle) resizeHandle.style.display = '';
         if (edgeHandle) edgeHandle.classList.add('open');
         if (edgeLabel) edgeLabel.textContent = 'Hide JD';
@@ -1958,6 +1960,11 @@ async function handleExpandedStatusChange(newStatus) {
         logSystemEvent(expandedJobId, `Status changed to ${newStatus}`);
         expandedJobData.status = newStatus === 'applying' ? 'greenlighted' : newStatus;
         showToast(`Status updated to ${newStatus}`, 'success');
+
+        // Auto-collapse when ignoring a job so it immediately disappears from the board
+        if (newStatus === 'ignored') {
+            collapseJobView();
+        }
     }
 }
 
@@ -3008,9 +3015,47 @@ function renderKanbanColumn(containerId, countId, jobs) {
     setupKanbanDragDrop(container);
 }
 
+// Track the source status of a dragged kanban card
+let _kanbanDragSourceStatus = null;
+
 function setupKanbanDragDrop(container) {
-    // Drag start on cards
+    // Drag start on cards — use mousedown/mousemove to enforce a distance threshold
     container.querySelectorAll('.kanban-card').forEach(card => {
+        let startX = 0, startY = 0, isDragging = false;
+        // Prevent native drag until threshold met
+        card.setAttribute('draggable', 'false');
+
+        card.addEventListener('mousedown', (e) => {
+            // Don't interfere with buttons inside the card
+            if (e.target.closest('button')) return;
+            startX = e.clientX;
+            startY = e.clientY;
+            isDragging = false;
+
+            const onMove = (me) => {
+                const dx = me.clientX - startX;
+                const dy = me.clientY - startY;
+                if (Math.abs(dx) > 8 || Math.abs(dy) > 8) {
+                    isDragging = true;
+                    card.setAttribute('draggable', 'true');
+                    // Store source status from the column
+                    const srcCol = card.closest('.kanban-column');
+                    _kanbanDragSourceStatus = srcCol ? srcCol.dataset.status : null;
+                    document.removeEventListener('mousemove', onMove);
+                    document.removeEventListener('mouseup', onUp);
+                }
+            };
+            const onUp = () => {
+                document.removeEventListener('mousemove', onMove);
+                document.removeEventListener('mouseup', onUp);
+                if (!isDragging) {
+                    card.setAttribute('draggable', 'false');
+                }
+            };
+            document.addEventListener('mousemove', onMove);
+            document.addEventListener('mouseup', onUp);
+        });
+
         card.addEventListener('dragstart', (e) => {
             card.classList.add('dragging');
             e.dataTransfer.setData('text/plain', card.dataset.jobId);
@@ -3018,6 +3063,8 @@ function setupKanbanDragDrop(container) {
         });
         card.addEventListener('dragend', () => {
             card.classList.remove('dragging');
+            card.setAttribute('draggable', 'false');
+            _kanbanDragSourceStatus = null;
             document.querySelectorAll('.kanban-column.drag-over').forEach(col =>
                 col.classList.remove('drag-over')
             );
@@ -3060,6 +3107,19 @@ function setupKanbanDragDrop(container) {
         };
         const newStatus = statusMap[targetStatus];
         if (!newStatus) return;
+
+        // If dropping into the same column, do nothing
+        if (_kanbanDragSourceStatus === targetStatus) return;
+
+        // Confirm before moving jobs from advanced stages
+        const advancedStatuses = ['interviewing', 'offer', 'applied'];
+        if (advancedStatuses.includes(_kanbanDragSourceStatus)) {
+            const ok = confirm(`Move this job from "${_kanbanDragSourceStatus}" to "${targetStatus}"?`);
+            if (!ok) {
+                refreshBoard();
+                return;
+            }
+        }
 
         await api.updateJobStatus(jobId, newStatus);
         showToast(`Moved to ${targetStatus}`, 'success');
@@ -5883,11 +5943,11 @@ async function handleUpdateNotes(jobId, notes) {
             leftPanel.style.width = clamped + 'px';
             rightPanel.style.flex = '1';
         } else if (leftPanel) {
-            // JD panel (original behavior)
+            // JD panel resize + persist
             const newWidth = e.clientX - containerRect.left;
             const clamped = Math.max(200, Math.min(containerRect.width - 300, newWidth));
-            leftPanel.style.flex = 'none';
             leftPanel.style.width = clamped + 'px';
+            localStorage.setItem('jdPanelWidth', clamped);
         }
     });
 

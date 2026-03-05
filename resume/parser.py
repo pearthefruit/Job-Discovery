@@ -9,6 +9,8 @@ Converts paragraphs to HTML preserving bold, italic, underline, and alignment.
 import re
 import docx
 from docx.enum.text import WD_ALIGN_PARAGRAPH
+from docx.oxml.ns import qn
+from docx.text.run import Run
 
 
 # Section headings we recognize (case-insensitive partial match)
@@ -107,10 +109,12 @@ class ResumeParser:
 
             heading_type = self._detect_section_heading(p)
             if heading_type:
-                # Start a new section
+                # Keep heading as <p> to preserve original formatting (color, size)
+                heading_html = self._para_to_html(p)
                 current_section = {
                     'type': heading_type,
-                    'content_html': '',
+                    'heading_text': text,
+                    'content_html': heading_html,
                 }
                 sections.append(current_section)
 
@@ -290,8 +294,37 @@ class ResumeParser:
             # No pipe - treat whole thing as a title
             return '', clean, dates
 
+    def _run_to_html(self, run):
+        """Convert a single run to HTML with formatting."""
+        return self._run_to_html_text(run, run.text)
+
+    def _run_to_html_text(self, run, text):
+        """Convert text with a run's formatting to HTML."""
+        text = self._escape_html(text)
+        if not text:
+            return ''
+
+        if run.bold and run.italic:
+            text = f'<strong><em>{text}</em></strong>'
+        elif run.bold:
+            text = f'<strong>{text}</strong>'
+        elif run.italic:
+            text = f'<em>{text}</em>'
+        if run.underline:
+            text = f'<u>{text}</u>'
+
+        # Preserve text color
+        try:
+            if run.font.color and run.font.color.rgb:
+                color_hex = str(run.font.color.rgb)
+                text = f'<span style="color:#{color_hex}">{text}</span>'
+        except (AttributeError, TypeError):
+            pass
+
+        return text
+
     def _para_to_html(self, para):
-        """Convert a paragraph to HTML preserving formatting."""
+        """Convert a paragraph to HTML preserving formatting and hyperlinks."""
         if not para.text.strip():
             return ''
 
@@ -299,56 +332,108 @@ class ResumeParser:
         is_bullet = (para.style and para.style.name == 'List Paragraph')
 
         # Check alignment
-        align_style = ''
+        styles = []
         if para.alignment == WD_ALIGN_PARAGRAPH.RIGHT:
-            align_style = ' style="text-align:right"'
+            styles.append('text-align:right')
         elif para.alignment == WD_ALIGN_PARAGRAPH.CENTER:
-            align_style = ' style="text-align:center"'
+            styles.append('text-align:center')
 
-        # Build inline HTML from runs
-        html_parts = []
-        for run in para.runs:
-            text = self._escape_html(run.text)
-            if not text:
-                continue
+        # Detect font size (max across runs)
+        max_font_size = None
+        for child in para._element:
+            if child.tag == qn('w:r'):
+                run = Run(child, para)
+                if run.font.size:
+                    sz = run.font.size.pt
+                    if max_font_size is None or sz > max_font_size:
+                        max_font_size = sz
 
-            # Replace tab with spacing
-            text = text.replace('\t', '&emsp;')
+        data_attrs = []
+        if max_font_size and max_font_size > 10:
+            data_attrs.append(f'data-font-size="{max_font_size:.0f}"')
 
-            if run.bold and run.italic:
-                text = f'<strong><em>{text}</em></strong>'
-            elif run.bold:
-                text = f'<strong>{text}</strong>'
-            elif run.italic:
-                text = f'<em>{text}</em>'
-            if run.underline:
-                text = f'<u>{text}</u>'
+        # Detect paragraph borders (top/bottom)
+        pPr = para._element.find(qn('w:pPr'))
+        if pPr is not None:
+            pBdr = pPr.find(qn('w:pBdr'))
+            if pBdr is not None:
+                for side in ('bottom', 'top'):
+                    border_el = pBdr.find(qn(f'w:{side}'))
+                    if border_el is not None:
+                        val = border_el.get(qn('w:val'), 'single')
+                        bsz = border_el.get(qn('w:sz'), '4')
+                        bcolor = border_el.get(qn('w:color'), 'auto')
+                        data_attrs.append(f'data-border-{side}="{val},{bsz},{bcolor}"')
 
-            # Preserve text color
-            try:
-                if run.font.color and run.font.color.rgb:
-                    color_hex = str(run.font.color.rgb)
-                    text = f'<span style="color:#{color_hex}">{text}</span>'
-            except (AttributeError, TypeError):
-                pass
+        # Build tag attributes
+        tag_attrs = ''
+        if styles:
+            tag_attrs += f' style="{"; ".join(styles)}"'
+        for da in data_attrs:
+            tag_attrs += f' {da}'
 
-            html_parts.append(text)
+        # Build a list of (html_fragment, is_tab) tuples so we can detect
+        # tab-separated dates BEFORE joining, avoiding cutting through tags.
+        fragments = []
+        for child in para._element:
+            if child.tag == qn('w:hyperlink'):
+                r_id = child.get(qn('r:id'))
+                url = ''
+                if r_id:
+                    try:
+                        url = para.part.rels[r_id].target_ref
+                    except (KeyError, AttributeError):
+                        pass
+                link_parts = []
+                for run_el in child.findall(qn('w:r')):
+                    run = Run(run_el, para)
+                    link_parts.append(self._run_to_html(run))
+                link_text = ''.join(link_parts)
+                if url and link_text:
+                    fragments.append((f'<a href="{self._escape_html(url)}" target="_blank">{link_text}</a>', False))
+                elif link_text:
+                    fragments.append((link_text, False))
+            elif child.tag == qn('w:r'):
+                run = Run(child, para)
+                text = run.text or ''
+                if '\t' in text:
+                    # Split on tab — parts before tab are regular, tab itself is a marker
+                    parts = text.split('\t')
+                    for j, part in enumerate(parts):
+                        if j > 0:
+                            fragments.append(('', True))  # tab marker
+                        if part:
+                            # Build HTML for this text chunk with the run's formatting
+                            fragments.append((self._run_to_html_text(run, part), False))
+                else:
+                    html = self._run_to_html(run)
+                    if html:
+                        fragments.append((html, False))
 
-        content = ''.join(html_parts)
+        # Find the last tab marker — everything after it may be a date
+        last_tab_idx = None
+        for idx in range(len(fragments) - 1, -1, -1):
+            if fragments[idx][1]:  # is_tab
+                last_tab_idx = idx
+                break
 
-        # Float dates to the right when separated by tab (emsp)
-        if '&emsp;' in content:
-            parts = content.split('&emsp;')
-            last_part = parts[-1]
-            last_text = re.sub(r'<[^>]+>', '', last_part).strip()
-            if DATE_PATTERN.search(last_text):
-                rest = '&emsp;'.join(parts[:-1])
-                content = f'{rest}<span style="float:right">{last_part}</span>'
+        if last_tab_idx is not None:
+            # Extract plain text after the last tab to check for dates
+            after_tab_text = re.sub(r'<[^>]+>', '', ''.join(f for f, _ in fragments[last_tab_idx + 1:])).strip()
+            if DATE_PATTERN.search(after_tab_text):
+                # Build content with float:right for the date portion
+                before = ''.join(f for f, _ in fragments[:last_tab_idx])
+                after = ''.join(f for f, _ in fragments[last_tab_idx + 1:])
+                content = f'{before}<span style="float:right">{after}</span>'
+            else:
+                content = ''.join(f if not is_tab else '&emsp;' for f, is_tab in fragments)
+        else:
+            content = ''.join(f if not is_tab else '&emsp;' for f, is_tab in fragments)
 
         if is_bullet:
-            return f'<li{align_style}>{content}</li>\n'
+            return f'<li{tag_attrs}>{content}</li>\n'
         else:
-            return f'<p{align_style}>{content}</p>\n'
+            return f'<p{tag_attrs}>{content}</p>\n'
 
     def _wrap_list_items(self, html):
         """Wrap consecutive <li> elements in <ul> tags."""
