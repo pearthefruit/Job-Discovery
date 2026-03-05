@@ -388,7 +388,15 @@ End with this exact line (High + Medium IDs, best first):
     result = _strip_preamble(result)
 
     # Extract recommended story IDs from the AI's structured output
-    suggested_ids = _extract_recommended_ids(result, [s['id'] for s in all_stories])
+    valid_ids = [s['id'] for s in all_stories]
+    suggested_ids = _extract_recommended_ids(result, valid_ids)
+    # In evaluate mode, AI often only puts "keep" IDs in RECOMMENDED comment,
+    # omitting new stories from the #### Add section — merge those in too
+    if assigned_story_ids:
+        add_ids = _extract_add_section_ids(result, valid_ids)
+        for aid in add_ids:
+            if aid not in suggested_ids:
+                suggested_ids.append(aid)
     # Strip the machine-readable comment from the displayed markdown
     display_result = re.sub(r'\s*<!--\s*RECOMMENDED:.*?-->\s*', '', result).strip()
 
@@ -652,6 +660,20 @@ def _extract_recommended_ids(text, valid_ids):
             sid = int(token)
             if sid in valid_ids:
                 ids.append(sid)
+    return ids
+
+
+def _extract_add_section_ids(text, valid_ids):
+    """Extract story IDs from the #### Add section (AI often omits these from RECOMMENDED)."""
+    add_match = re.search(r'####\s*Add\s*\n(.*?)(?=####|\Z)', text, re.DOTALL)
+    if not add_match:
+        return []
+    add_text = add_match.group(1)
+    ids = []
+    for m in re.finditer(r'\[ID:(\d+)\]', add_text):
+        sid = int(m.group(1))
+        if sid in valid_ids and sid not in ids:
+            ids.append(sid)
     return ids
 
 

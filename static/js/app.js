@@ -2592,7 +2592,77 @@ async function handleExportDocx() {
 }
 
 function handlePrintPDF() {
-    window.print();
+    // Collect resume HTML with section types for styling
+    let sectionEntries = []; // [{type, html}]
+    if (window.resumeEditor) {
+        const sections = window.resumeEditor.getContent();
+        sectionEntries = sections.map(s => ({ type: s.type, html: s.html }));
+    } else {
+        document.querySelectorAll('#resume-sections-container .resume-section').forEach(el => {
+            const chip = el.querySelector('.chip-sm');
+            const type = chip ? chip.textContent.trim().toLowerCase() : '';
+            const content = el.querySelector('.resume-content');
+            if (content) sectionEntries.push({ type, html: content.innerHTML });
+        });
+    }
+
+    if (!sectionEntries.length) {
+        showToast('No resume content to print', 'error');
+        return;
+    }
+
+    const resumeHtml = sectionEntries.map(s =>
+        `<div class="sec sec-${s.type}">${s.html}</div>`
+    ).join('\n');
+
+    // Use a hidden iframe so print stays in same tab
+    let frame = document.getElementById('pdf-print-frame');
+    if (frame) frame.remove();
+    frame = document.createElement('iframe');
+    frame.id = 'pdf-print-frame';
+    frame.style.cssText = 'position:fixed;top:0;left:0;width:0;height:0;border:none;visibility:hidden;';
+    document.body.appendChild(frame);
+
+    const fdoc = frame.contentDocument || frame.contentWindow.document;
+    fdoc.open();
+    fdoc.write(`<!DOCTYPE html><html><head><title>Resume</title>
+<style>
+@page { size: letter; margin: 0.5in; }
+body {
+    font-family: Calibri, 'Segoe UI', sans-serif;
+    font-size: 10pt;
+    color: #000;
+    background: #fff;
+    margin: 0; padding: 0;
+    line-height: 1.3;
+}
+h2, h3 {
+    font-size: 14pt;
+    font-weight: bold;
+    border-bottom: 1px solid #000;
+    margin: 8pt 0 3pt;
+    padding-bottom: 2pt;
+}
+p { margin: 1pt 0; }
+ul { margin: 2pt 0 2pt 18pt; padding: 0; list-style-type: disc; }
+li { margin: 1pt 0; }
+li p { margin: 0; display: inline; }
+span[style*="float:right"], span[style*="float: right"] { float: right; }
+a { color: #0563C1; text-decoration: underline; }
+strong { font-weight: bold; }
+em { font-style: italic; }
+/* Header section — name line larger */
+.sec-header > p:first-child { font-size: 20pt; margin-bottom: 2pt; }
+/* Summary section — border after first and last p */
+.sec-summary > p:first-of-type { border-bottom: 1px solid #000; padding-bottom: 4pt; margin-bottom: 4pt; }
+.sec-summary > p:last-of-type { border-bottom: 1px solid #000; padding-bottom: 4pt; margin-bottom: 4pt; }
+</style></head><body>
+${resumeHtml}
+</body></html>`);
+    fdoc.close();
+
+    frame.contentWindow.focus();
+    setTimeout(() => frame.contentWindow.print(), 200);
 }
 
 function toggleExportMenu(e) {
