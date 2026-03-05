@@ -3089,51 +3089,17 @@ function renderKanbanColumn(containerId, countId, jobs) {
 let _kanbanDragSourceStatus = null;
 
 function setupKanbanDragDrop(container) {
-    // Drag start on cards — use mousedown/mousemove to enforce a distance threshold
     container.querySelectorAll('.kanban-card').forEach(card => {
-        let startX = 0, startY = 0, isDragging = false;
-        // Prevent native drag until threshold met
-        card.setAttribute('draggable', 'false');
-
-        card.addEventListener('mousedown', (e) => {
-            // Don't interfere with buttons inside the card
-            if (e.target.closest('button')) return;
-            startX = e.clientX;
-            startY = e.clientY;
-            isDragging = false;
-
-            const onMove = (me) => {
-                const dx = me.clientX - startX;
-                const dy = me.clientY - startY;
-                if (Math.abs(dx) > 8 || Math.abs(dy) > 8) {
-                    isDragging = true;
-                    card.setAttribute('draggable', 'true');
-                    // Store source status from the column
-                    const srcCol = card.closest('.kanban-column');
-                    _kanbanDragSourceStatus = srcCol ? srcCol.dataset.status : null;
-                    document.removeEventListener('mousemove', onMove);
-                    document.removeEventListener('mouseup', onUp);
-                }
-            };
-            const onUp = () => {
-                document.removeEventListener('mousemove', onMove);
-                document.removeEventListener('mouseup', onUp);
-                if (!isDragging) {
-                    card.setAttribute('draggable', 'false');
-                }
-            };
-            document.addEventListener('mousemove', onMove);
-            document.addEventListener('mouseup', onUp);
-        });
-
         card.addEventListener('dragstart', (e) => {
+            if (e.target.closest('button')) { e.preventDefault(); return; }
             card.classList.add('dragging');
             e.dataTransfer.setData('text/plain', card.dataset.jobId);
             e.dataTransfer.effectAllowed = 'move';
+            const srcCol = card.closest('.kanban-column');
+            _kanbanDragSourceStatus = srcCol ? srcCol.dataset.status : null;
         });
         card.addEventListener('dragend', () => {
             card.classList.remove('dragging');
-            card.setAttribute('draggable', 'false');
             _kanbanDragSourceStatus = null;
             document.querySelectorAll('.kanban-column.drag-over').forEach(col =>
                 col.classList.remove('drag-over')
