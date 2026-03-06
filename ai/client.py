@@ -96,6 +96,10 @@ class AIClient:
         if not base_url:
             raise ValueError(f"Unknown provider: {provider}")
 
+        # Cap max_tokens for providers with smaller context windows
+        # Gemini handles 65536 fine (1M+ context), but most free-tier models can't
+        effective_max = min(max_tokens, 16384)
+
         response = self.http.post(
             base_url,
             headers={
@@ -104,7 +108,7 @@ class AIClient:
             },
             json={
                 "model": model,
-                "max_tokens": max_tokens,
+                "max_tokens": effective_max,
                 "temperature": temperature,
                 "messages": [{"role": "user", "content": prompt}],
             },
@@ -166,9 +170,6 @@ class AIClient:
         On other error → skip that model entirely.
         Then each fallback provider's models, then Claude as last resort.
         """
-        if not self.gemini_keys:
-            raise ValueError("No Gemini API keys configured")
-
         errors = []
 
         for model in self.gemini_models:
@@ -251,7 +252,12 @@ class AIClient:
     # Convenience aliases (backward compat)
     def analyze_resume(self, prompt):
         if self._forced_model:
-            return self._call_forced(prompt)
+            try:
+                return self._call_forced(prompt)
+            except Exception as e:
+                log.warning(f"Forced model {self._forced_model} failed: {e}, falling back to rotation")
+                self._forced_model = None
+                return self.analyze_with_rotation(prompt)
         return self.analyze_with_rotation(prompt)
 
     def force_model(self, provider, model):
