@@ -143,6 +143,18 @@ class JobDiscoveryDB:
             )""")
             conn.execute("CREATE INDEX IF NOT EXISTS idx_api_usage_created ON api_usage_log(created_at)")
             conn.execute("CREATE INDEX IF NOT EXISTS idx_api_usage_provider ON api_usage_log(provider)")
+            # Analysis history table
+            conn.execute("""CREATE TABLE IF NOT EXISTS analysis_history (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                application_id INTEGER NOT NULL,
+                phase1 TEXT,
+                phase2 TEXT,
+                model_used TEXT,
+                provider TEXT,
+                created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                FOREIGN KEY(application_id) REFERENCES applications(id) ON DELETE CASCADE
+            )""")
+            conn.execute("CREATE INDEX IF NOT EXISTS idx_analysis_history_app ON analysis_history(application_id)")
 
     # --- Target URLs ---
 
@@ -688,6 +700,29 @@ class JobDiscoveryDB:
             conn.execute(
                 f"UPDATE applications SET {', '.join(set_parts)} WHERE id = ?", values
             )
+
+    # --- Analysis History ---
+
+    def add_analysis_history(self, application_id, phase1=None, phase2=None,
+                             model_used=None, provider=None):
+        with self.get_connection() as conn:
+            cursor = conn.execute(
+                """INSERT INTO analysis_history
+                   (application_id, phase1, phase2, model_used, provider)
+                   VALUES (?, ?, ?, ?, ?)""",
+                (application_id, phase1, phase2, model_used, provider),
+            )
+            return cursor.lastrowid
+
+    def get_analysis_history(self, application_id):
+        with self.get_connection() as conn:
+            rows = conn.execute(
+                """SELECT * FROM analysis_history
+                   WHERE application_id = ?
+                   ORDER BY created_at DESC""",
+                (application_id,),
+            ).fetchall()
+            return [dict(r) for r in rows]
 
     # --- Stories ---
 

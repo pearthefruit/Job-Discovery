@@ -20,14 +20,12 @@ GEMINI_API_KEYS = [
 GEMINI_API_KEY = GEMINI_API_KEYS[0] if GEMINI_API_KEYS else ""
 
 # Interview prep models — tried in order; rotate on rate limit.
+# Note: pro models and gemini-2.0-flash have limit:0 on free tier (disabled by Google).
 GEMINI_INTERVIEW_MODELS = [
-    "gemini-2.5-pro",
-    "gemini-3.1-pro-preview",
     "gemini-2.5-flash",
     "gemini-3-flash-preview",
     "gemini-3.1-flash-lite-preview",
     "gemini-2.5-flash-lite",
-    "gemini-2.0-flash",
 ]
 
 # Default model for single-call use
@@ -35,7 +33,7 @@ GEMINI_MODEL = "gemini-2.5-flash"
 
 # LLM extraction (Tier 2: after JSON-LD, before CSS selectors)
 LLM_EXTRACTION_ENABLED = True
-LLM_MODEL = "gemini-2.0-flash"
+LLM_MODEL = "gemini-2.5-flash"
 LLM_MAX_TEXT_CHARS = 16000
 LLM_TIMEOUT_SECONDS = 30
 
@@ -47,11 +45,12 @@ LLM_API_KEYS = [
 ]
 
 # Gemini model fallback chain for scraper LLM extraction.
+# Note: gemini-2.0-flash and 2.0-flash-lite have limit:0 on free tier.
 LLM_FALLBACK_MODELS = [
     "gemini-2.5-flash",
     "gemini-2.5-flash-lite",
-    "gemini-2.0-flash",
-    "gemini-2.0-flash-lite",
+    "gemini-3-flash-preview",
+    "gemini-3.1-flash-lite-preview",
 ]
 LLM_RATE_LIMIT_COOLDOWN_SECONDS = 60
 
@@ -73,9 +72,42 @@ SELECTOR_FAILURE_THRESHOLD = 5
 CLAUDE_API_KEY = os.environ.get("CLAUDE_API_KEY", "")
 CLAUDE_MODEL = "claude-sonnet-4-20250514"
 
+# Mistral — free-tier direct API (1 req/s, 500K TPM, 1B tokens/month)
+MISTRAL_API_KEY = os.environ.get("MISTRAL_API_KEY", "")
+MISTRAL_MODELS = [
+    "mistral-large-latest",
+    "mistral-medium-latest",
+    "mistral-small-latest",
+]
+
+# Cerebras — free-tier fast inference (OpenAI-compatible API)
+CEREBRAS_API_KEY = os.environ.get("CEREBRAS_API_KEY", "")
+CEREBRAS_MODELS = [
+    "gpt-oss-120b",
+    "llama3.1-8b",
+]
+
+# OpenRouter — free-tier fallback after Gemini + Mistral + Cerebras (OpenAI-compatible API)
+OPENROUTER_API_KEY = os.environ.get("OPENROUTER_API_KEY", "")
+OPENROUTER_MODELS = [
+    # Large / high-quality (availability rotates)
+    "nousresearch/hermes-3-llama-3.1-405b:free",
+    "meta-llama/llama-3.3-70b-instruct:free",
+    "qwen/qwen3-next-80b-a3b-instruct:free",
+    "mistralai/mistral-small-3.1-24b-instruct:free",
+    "arcee-ai/trinity-large-preview:free",
+    # Reliable fallbacks (own infra, not shared upstream)
+    "stepfun/step-3.5-flash:free",
+    "z-ai/glm-4.5-air:free",
+    "nvidia/nemotron-3-nano-30b-a3b:free",
+    "nvidia/nemotron-nano-9b-v2:free",
+    "arcee-ai/trinity-mini:free",
+    "google/gemma-3-27b-it:free",
+]
+
 # JD Reformat — dedicated key (lightweight, single call)
 JD_REFORMAT_API_KEY = os.environ.get("JD_REFORMAT_API_KEY", "")
-JD_REFORMAT_MODEL = "gemini-2.0-flash"
+JD_REFORMAT_MODEL = "gemini-2.5-flash"
 
 # Resume / Application
 UPLOAD_DIR = os.path.join(BASE_DIR, "uploads")

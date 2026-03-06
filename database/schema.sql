@@ -130,6 +130,21 @@ CREATE TABLE IF NOT EXISTS job_blurbs (
     content TEXT NOT NULL
 );
 
+-- =================== Analysis History ===================
+
+CREATE TABLE IF NOT EXISTS analysis_history (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    application_id INTEGER NOT NULL,
+    phase1 TEXT,
+    phase2 TEXT,
+    model_used TEXT,
+    provider TEXT,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY(application_id) REFERENCES applications(id) ON DELETE CASCADE
+);
+
+CREATE INDEX IF NOT EXISTS idx_analysis_history_app ON analysis_history(application_id);
+
 -- =================== AI Usage Tracking ===================
 
 CREATE TABLE IF NOT EXISTS api_usage_log (

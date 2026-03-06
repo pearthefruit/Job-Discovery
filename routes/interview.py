@@ -183,15 +183,9 @@ RESUME:
         context += f"\nSTORY BANK:\n{stories_text}\n"
 
     # Build AI client — Claude primary for interview prep, Gemini fallback
-    from config import GEMINI_API_KEYS, GEMINI_INTERVIEW_MODELS, CLAUDE_API_KEY, CLAUDE_MODEL
     from ai.client import AIClient
 
-    client = AIClient(
-        gemini_keys=GEMINI_API_KEYS,
-        gemini_models=GEMINI_INTERVIEW_MODELS,
-        claude_api_key=CLAUDE_API_KEY,
-        claude_model=CLAUDE_MODEL,
-    )
+    client = AIClient.from_config()
 
     try:
         result = client.analyze_interview(context)
@@ -247,15 +241,9 @@ Generate a complete SAIL story based on the bullet point. Include:
 ### Takeaways
 [Lessons learned, how this shaped their approach]"""
 
-    from config import GEMINI_API_KEYS, GEMINI_INTERVIEW_MODELS, CLAUDE_API_KEY, CLAUDE_MODEL
     from ai.client import AIClient
 
-    client = AIClient(
-        gemini_keys=GEMINI_API_KEYS,
-        gemini_models=GEMINI_INTERVIEW_MODELS,
-        claude_api_key=CLAUDE_API_KEY,
-        claude_model=CLAUDE_MODEL,
-    )
+    client = AIClient.from_config()
 
     try:
         result = client.analyze_interview(prompt)
@@ -390,15 +378,9 @@ Competencies from the JD not covered by any story.
 End with this exact line (High + Medium IDs, best first):
 <!-- RECOMMENDED: id1,id2,id3 -->"""
 
-    from config import GEMINI_API_KEYS, GEMINI_INTERVIEW_MODELS, CLAUDE_API_KEY, CLAUDE_MODEL
     from ai.client import AIClient
 
-    client = AIClient(
-        gemini_keys=GEMINI_API_KEYS,
-        gemini_models=GEMINI_INTERVIEW_MODELS,
-        claude_api_key=CLAUDE_API_KEY,
-        claude_model=CLAUDE_MODEL,
-    )
+    client = AIClient.from_config()
 
     try:
         result = client.analyze_with_rotation(prompt, max_tokens=12000)
@@ -510,15 +492,9 @@ Keep the same SAIL structure but adjust emphasis, language, and framing.
 ### Takeaways
 [Reframed learnings, connected to the target role]"""
 
-    from config import GEMINI_API_KEYS, GEMINI_INTERVIEW_MODELS, CLAUDE_API_KEY, CLAUDE_MODEL
     from ai.client import AIClient
 
-    client = AIClient(
-        gemini_keys=GEMINI_API_KEYS,
-        gemini_models=GEMINI_INTERVIEW_MODELS,
-        claude_api_key=CLAUDE_API_KEY,
-        claude_model=CLAUDE_MODEL,
-    )
+    client = AIClient.from_config()
 
     try:
         result = client.analyze_interview(prompt)
@@ -576,15 +552,9 @@ Generate a complete SAIL story based on the bullet point. Ask yourself what deta
 ### Takeaways
 [Lessons learned, how this shaped their approach]"""
 
-    from config import GEMINI_API_KEYS, GEMINI_INTERVIEW_MODELS, CLAUDE_API_KEY, CLAUDE_MODEL
     from ai.client import AIClient
 
-    client = AIClient(
-        gemini_keys=GEMINI_API_KEYS,
-        gemini_models=GEMINI_INTERVIEW_MODELS,
-        claude_api_key=CLAUDE_API_KEY,
-        claude_model=CLAUDE_MODEL,
-    )
+    client = AIClient.from_config()
 
     try:
         result = client.analyze_interview(prompt)

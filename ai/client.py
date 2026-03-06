@@ -2,7 +2,8 @@
 AI client for resume analysis and interview prep.
 
 Uses Gemini with key × model rotation for free-tier rate-limit resilience.
-Claude support retained as optional fallback. Direct REST calls via httpx.
+Fallback chain: Gemini → Mistral → Cerebras → OpenRouter → Claude.
+Direct REST calls via httpx.
 """
 
 import logging
@@ -14,24 +15,35 @@ log = logging.getLogger(__name__)
 GEMINI_URL = "https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent"
 CLAUDE_URL = "https://api.anthropic.com/v1/messages"
 
+# OpenAI-compatible providers (same request/response format)
+OPENAI_COMPAT_URLS = {
+    'mistral': "https://api.mistral.ai/v1/chat/completions",
+    'cerebras': "https://api.cerebras.ai/v1/chat/completions",
+    'openrouter': "https://openrouter.ai/api/v1/chat/completions",
+}
+
 TIMEOUT = 120  # seconds - analysis prompts generate long responses
 
 
 class AIClient:
     def __init__(self, gemini_keys=None, gemini_models=None,
                  gemini_api_key="", gemini_model="gemini-2.5-flash",
-                 claude_api_key="", claude_model="claude-sonnet-4-20250514"):
+                 claude_api_key="", claude_model="claude-sonnet-4-20250514",
+                 fallback_providers=None):
         # Support both new list-based and old single-key init
         self.gemini_keys = gemini_keys or ([gemini_api_key] if gemini_api_key else [])
         self.gemini_models = gemini_models or ([gemini_model] if gemini_model else ["gemini-2.5-flash"])
         self.claude_api_key = claude_api_key
         self.claude_model = claude_model
+        # Fallback providers: list of (provider_name, api_key, [models])
+        self.fallback_providers = fallback_providers or []
         self.http = httpx.Client(timeout=TIMEOUT)
         # Track which model actually answered (for logging/UI)
         self.last_model_used = None
         self.last_provider = None
         self.last_key_hint = None
         self.last_usage = {}
+        self._forced_model = None
 
     def _call_gemini(self, key, model, prompt, temperature=0.3, max_tokens=65536):
         """Single Gemini API call. Returns text or raises."""
@@ -78,6 +90,52 @@ class AIClient:
         }
         return text
 
+    def _call_openai_compat(self, provider, api_key, model, prompt, temperature=0.3, max_tokens=65536):
+        """Call any OpenAI-compatible API (Mistral, Cerebras, OpenRouter, etc.)."""
+        base_url = OPENAI_COMPAT_URLS.get(provider)
+        if not base_url:
+            raise ValueError(f"Unknown provider: {provider}")
+
+        response = self.http.post(
+            base_url,
+            headers={
+                "Authorization": f"Bearer {api_key}",
+                "Content-Type": "application/json",
+            },
+            json={
+                "model": model,
+                "max_tokens": max_tokens,
+                "temperature": temperature,
+                "messages": [{"role": "user", "content": prompt}],
+            },
+        )
+
+        if response.status_code == 429:
+            raise RateLimitError(f"{provider}/{model} rate limited")
+        if response.status_code != 200:
+            raise RuntimeError(f"{provider}/{model} HTTP {response.status_code}: {response.text[:300]}")
+
+        data = response.json()
+        choices = data.get("choices", [])
+        if not choices:
+            raise RuntimeError(f"{provider}/{model} returned no choices")
+
+        text = choices[0].get("message", {}).get("content", "") or ""
+        if not text.strip():
+            raise RuntimeError(f"{provider}/{model} returned empty content")
+
+        self.last_model_used = model
+        self.last_provider = provider
+        self.last_key_hint = f"...{api_key[-4:]}"
+        usage_data = data.get("usage", {})
+        self.last_usage = {
+            'provider': provider,
+            'prompt_tokens': usage_data.get('prompt_tokens', 0),
+            'completion_tokens': usage_data.get('completion_tokens', 0),
+            'total_tokens': usage_data.get('total_tokens', 0),
+        }
+        return text
+
     def analyze_gemini(self, prompt, temperature=0.3, max_tokens=65536, retries=2):
         """Call Gemini with retry on rate limit (single key+model, backward compat)."""
         if not self.gemini_keys:
@@ -101,11 +159,12 @@ class AIClient:
         raise last_error
 
     def analyze_with_rotation(self, prompt, temperature=0.3, max_tokens=65536):
-        """Try all key × model combinations. Best model first, rotate keys on rate limit.
+        """Try Gemini → fallback providers → Claude.
 
-        Order: for each model (quality-first), try every key.
+        Gemini: for each model (quality-first), try every key.
         On rate limit → next key. All keys exhausted → next model.
         On other error → skip that model entirely.
+        Then each fallback provider's models, then Claude as last resort.
         """
         if not self.gemini_keys:
             raise ValueError("No Gemini API keys configured")
@@ -124,10 +183,23 @@ class AIClient:
                     errors.append(f"{model}: {e}")
                     break  # non-rate-limit error → model is broken, skip to next
 
+        # Fallback providers (Mistral, Cerebras, OpenRouter, etc.)
+        for provider, api_key, models in self.fallback_providers:
+            for model in models:
+                try:
+                    log.info(f"Trying {provider}/{model}")
+                    return self._call_openai_compat(provider, api_key, model, prompt, temperature, max_tokens)
+                except RateLimitError:
+                    errors.append(f"{provider}/{model}: rate limited")
+                    continue
+                except Exception as e:
+                    errors.append(f"{provider}/{model}: {e}")
+                    continue
+
         # Last resort: try Claude if configured
         if self.claude_api_key:
             try:
-                log.info("All Gemini combos exhausted, trying Claude")
+                log.info("All providers exhausted, trying Claude")
                 return self.analyze_claude(prompt, temperature, max_tokens)
             except Exception as e:
                 errors.append(f"Claude fallback: {e}")
@@ -178,10 +250,64 @@ class AIClient:
 
     # Convenience aliases (backward compat)
     def analyze_resume(self, prompt):
+        if self._forced_model:
+            return self._call_forced(prompt)
         return self.analyze_with_rotation(prompt)
+
+    def force_model(self, provider, model):
+        """Force a specific provider/model — skips rotation."""
+        self._forced_model = (provider, model)
+
+    def _call_forced(self, prompt, temperature=0.3, max_tokens=65536):
+        """Call only the forced provider/model, no fallback."""
+        provider, model = self._forced_model
+        if provider == 'gemini':
+            if not self.gemini_keys:
+                raise ValueError("No Gemini API keys configured")
+            return self._call_gemini(self.gemini_keys[0], model, prompt, temperature, max_tokens)
+        elif provider == 'claude':
+            old_model = self.claude_model
+            self.claude_model = model
+            try:
+                return self.analyze_claude(prompt, temperature, max_tokens)
+            finally:
+                self.claude_model = old_model
+        else:
+            # Find the fallback provider
+            for prov_name, api_key, _ in self.fallback_providers:
+                if prov_name == provider:
+                    return self._call_openai_compat(provider, api_key, model, prompt, temperature, max_tokens)
+            raise ValueError(f"Unknown provider: {provider}")
 
     def analyze_interview(self, prompt):
         return self.analyze_with_rotation(prompt)
+
+    @classmethod
+    def from_config(cls):
+        """Build an AIClient with all providers from config.py."""
+        from config import (
+            GEMINI_API_KEYS, GEMINI_INTERVIEW_MODELS,
+            CLAUDE_API_KEY, CLAUDE_MODEL,
+            MISTRAL_API_KEY, MISTRAL_MODELS,
+            CEREBRAS_API_KEY, CEREBRAS_MODELS,
+            OPENROUTER_API_KEY, OPENROUTER_MODELS,
+        )
+        # Build fallback provider list (skip unconfigured providers)
+        fallbacks = []
+        if MISTRAL_API_KEY and MISTRAL_MODELS:
+            fallbacks.append(('mistral', MISTRAL_API_KEY, MISTRAL_MODELS))
+        if CEREBRAS_API_KEY and CEREBRAS_MODELS:
+            fallbacks.append(('cerebras', CEREBRAS_API_KEY, CEREBRAS_MODELS))
+        if OPENROUTER_API_KEY and OPENROUTER_MODELS:
+            fallbacks.append(('openrouter', OPENROUTER_API_KEY, OPENROUTER_MODELS))
+
+        return cls(
+            gemini_keys=GEMINI_API_KEYS,
+            gemini_models=GEMINI_INTERVIEW_MODELS,
+            claude_api_key=CLAUDE_API_KEY,
+            claude_model=CLAUDE_MODEL,
+            fallback_providers=fallbacks,
+        )
 
 
 class RateLimitError(RuntimeError):

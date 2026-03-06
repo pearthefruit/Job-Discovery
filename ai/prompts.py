@@ -55,7 +55,7 @@ BULLET_ANALYSIS_PROMPT = """You are an expert resume writer specializing in high
 Review EVERY SINGLE bullet point from the candidate's Work Experience section and provide detailed feedback.
 
 ### REQUIREMENTS
-1. **YOU MUST REVIEW EVERY BULLET** - Do not skip any bullets from any role
+1. **YOU MUST REVIEW EVERY BULLET** - Do not skip any bullets from any role, including side projects, advisory roles, and early career positions
 2. **For EACH bullet provide**:
    - **Rating**: STRONG / MODERATE / WEAK
    - **Current Text**: Quote the original bullet

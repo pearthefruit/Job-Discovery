@@ -31,7 +31,10 @@ let barHideTimer = null;
 
 const SECTION_LABELS = {
     header: 'Header',
+    headline: 'Headline',
+    contact: 'Contact',
     summary: 'Summary',
+    keywords: 'Keywords',
     experience: 'Experience',
     education: 'Education',
     skills: 'Skills',
@@ -208,10 +211,22 @@ function scheduleSave() {
 async function doSave() {
     if (!appId || editors.length === 0) return;
 
-    const sectionsData = editors.map(({ editor, sectionId, sectionType }) => ({
-        id: sectionId,
-        type: sectionType,
+    // Collect HTML from each editor, merging sub-sections back into originals
+    const rawEntries = editors.map(({ editor, sectionId, sectionType, parentId, originalType }) => ({
+        id: parentId || sectionId,
+        type: originalType || sectionType,
         html: editor.getHTML(),
+    }));
+    // Merge entries that share the same parent ID (e.g., headline + contact → header)
+    const mergedMap = new Map();
+    for (const entry of rawEntries) {
+        if (!mergedMap.has(entry.id)) mergedMap.set(entry.id, { id: entry.id, type: entry.type, parts: [] });
+        mergedMap.get(entry.id).parts.push(entry.html);
+    }
+    const sectionsData = [...mergedMap.values()].map(m => ({
+        id: m.id,
+        type: m.type,
+        html: m.parts.join('\n'),
     }));
 
     const combinedHtml = sectionsData.map(s => s.html).join('\n');
@@ -319,6 +334,8 @@ function initEditors(sections, applicationId) {
             editor,
             sectionId: section.id,
             sectionType: section.section_type,
+            parentId: section._parentId || null,
+            originalType: section._originalType || null,
         });
     });
 
@@ -361,14 +378,17 @@ function getContent() {
 function setupBulletHovers() {
     // Visual highlight is handled entirely by pure CSS :hover pseudo-classes
     // (ProseMirror can't interfere with those). JS only manages the action bar.
-    editors.forEach(({ editor }) => {
+    editors.forEach(({ editor, sectionType }) => {
         const el = editor.options.element;
 
         el.addEventListener('mouseover', (e) => {
-            // Match bullet items and paragraphs (for experience sections without lists)
-            const target = e.target.closest('li') || e.target.closest('p');
+            // Skip contact sections entirely (not analyzed)
+            if (sectionType === 'contact') return;
+            // Match bullet items, paragraphs, and headings
+            const target = e.target.closest('li') || e.target.closest('p')
+                || e.target.closest('h2') || e.target.closest('h3');
             if (!target || !el.contains(target)) return;
-            // Skip very short paragraphs (headings rendered as p, etc.)
+            // Skip very short paragraphs (but not headings — those are intentionally short)
             if (target.tagName === 'P' && target.textContent.trim().length < 30) return;
             if (target === hoveredLi) return;
 
@@ -438,11 +458,18 @@ function positionBulletBar(li) {
     updateImproveButtonState();
 }
 
+function getHoveredSectionType() {
+    if (!hoveredEditorInstance) return null;
+    const entry = editors.find(e => e.editor === hoveredEditorInstance);
+    return entry ? entry.sectionType : null;
+}
+
 function updateImproveButtonState() {
     if (!bulletBar || !hoveredLi) return;
     const btn = bulletBar.querySelector('[data-action="improve"]');
     const bulletText = hoveredLi.textContent.trim();
-    const suggestion = findSuggestionForBullet(bulletText);
+    const sectionType = getHoveredSectionType();
+    const suggestion = findSuggestionForBullet(bulletText, sectionType);
 
     btn.className = 'bullet-btn bullet-btn-improve';
     if (suggestion) {
@@ -477,7 +504,8 @@ function hideBulletBarImmediate() {
 function handleBulletImprove() {
     if (!hoveredLi) return;
     const bulletText = hoveredLi.textContent.trim();
-    const suggestion = findSuggestionForBullet(bulletText);
+    const sectionType = getHoveredSectionType();
+    const suggestion = findSuggestionForBullet(bulletText, sectionType);
 
     if (onImproveCallback) {
         onImproveCallback({
@@ -504,9 +532,27 @@ function handleBulletEdit() {
     hideBulletBarImmediate();
 }
 
-function findSuggestionForBullet(bulletText) {
+function findSuggestionForBullet(bulletText, sectionType) {
     if (!bulletSuggestions.length || !bulletText) return null;
 
+    // For Phase 1 sub-sections, use direct target matching (no fuzzy logic)
+    if (sectionType === 'headline') {
+        return bulletSuggestions.find(s => s.target === 'headline') || null;
+    }
+    if (sectionType === 'summary') {
+        return bulletSuggestions.find(s => s.target === 'summary') || null;
+    }
+    if (sectionType === 'keywords') {
+        const text = bulletText.trim().toLowerCase();
+        if (text.startsWith('skills')) return bulletSuggestions.find(s => s.target === 'skills') || null;
+        if (text.startsWith('tools')) return bulletSuggestions.find(s => s.target === 'tools') || null;
+        return null;
+    }
+    if (sectionType === 'contact') {
+        return null;  // Contact info is never analyzed
+    }
+
+    // For experience/other sections, use fuzzy matching (Phase 2 bullet analysis)
     const normalize = (t) => t.toLowerCase().replace(/[^a-z0-9\s]/g, '').replace(/\s+/g, ' ').trim();
     const normalized = normalize(bulletText);
 
@@ -514,6 +560,7 @@ function findSuggestionForBullet(bulletText) {
     let bestScore = 0;
 
     for (const s of bulletSuggestions) {
+        if (s.target) continue;  // Skip Phase 1 suggestions in fuzzy matching
         const sNorm = normalize(s.current);
 
         // Exact match
@@ -564,8 +611,8 @@ function acceptRewrite(liElement, editorInstance, newText) {
                     return true;
                 }
             }
-            // Handle paragraph nodes (for experience sections without bullet lists)
-            if (node.type.name === 'paragraph') {
+            // Handle paragraph and heading nodes
+            if (node.type.name === 'paragraph' || node.type.name === 'heading') {
                 const before = resolved.before(depth);
                 const textStart = before + 1;
                 const textEnd = textStart + node.content.size;

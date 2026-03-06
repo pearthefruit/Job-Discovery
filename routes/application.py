@@ -12,6 +12,19 @@ def init_app(database):
     db = database
 
 
+def _seed_analysis_history(app_id, app_record):
+    """Migrate legacy analysis columns into history table if not already there."""
+    existing = db.get_analysis_history(app_id)
+    if not existing and (app_record.get('analysis_phase1') or app_record.get('analysis_phase2')):
+        db.add_analysis_history(
+            app_id,
+            phase1=app_record.get('analysis_phase1'),
+            phase2=app_record.get('analysis_phase2'),
+            model_used='(prior run)',
+            provider='unknown',
+        )
+
+
 def _log_usage(client, call_type, job_id=None):
     """Log AI API usage after a successful call."""
     try:
@@ -162,8 +175,10 @@ def get_application(app_id):
     app = db.get_application(app_id)
     if not app:
         return jsonify({"error": "Application not found"}), 404
+    _seed_analysis_history(app_id, app)
     sections = db.get_sections_for_resume(app['resume_id'])
     app['sections'] = sections
+    app['history'] = db.get_analysis_history(app_id)
     return jsonify(app)
 
 
@@ -172,9 +187,40 @@ def get_application_for_job(job_id):
     app = db.get_application_by_job(job_id)
     if not app:
         return jsonify({"error": "No application for this job"}), 404
+    _seed_analysis_history(app['id'], app)
     sections = db.get_sections_for_resume(app['resume_id'])
     app['sections'] = sections
+    app['history'] = db.get_analysis_history(app['id'])
     return jsonify(app)
+
+
+@application_bp.route("/api/ai-models", methods=["GET"])
+def list_ai_models():
+    """Return available AI models grouped by provider."""
+    from config import (
+        GEMINI_API_KEYS, GEMINI_INTERVIEW_MODELS,
+        CLAUDE_API_KEY, CLAUDE_MODEL,
+        MISTRAL_API_KEY, MISTRAL_MODELS,
+        CEREBRAS_API_KEY, CEREBRAS_MODELS,
+        OPENROUTER_API_KEY, OPENROUTER_MODELS,
+    )
+    models = []
+    if GEMINI_API_KEYS:
+        for m in GEMINI_INTERVIEW_MODELS:
+            models.append({"provider": "gemini", "model": m, "label": m})
+    if MISTRAL_API_KEY:
+        for m in MISTRAL_MODELS:
+            models.append({"provider": "mistral", "model": m, "label": m})
+    if CEREBRAS_API_KEY:
+        for m in CEREBRAS_MODELS:
+            models.append({"provider": "cerebras", "model": m, "label": m})
+    if OPENROUTER_API_KEY:
+        for m in OPENROUTER_MODELS:
+            short = m.split('/')[-1].replace(':free', '')
+            models.append({"provider": "openrouter", "model": m, "label": short})
+    if CLAUDE_API_KEY:
+        models.append({"provider": "claude", "model": CLAUDE_MODEL, "label": CLAUDE_MODEL})
+    return jsonify({"models": models})
 
 
 @application_bp.route("/api/applications/<int:app_id>/analyze", methods=["POST"])
@@ -198,8 +244,20 @@ def analyze_application(app_id):
     if not job_description:
         return jsonify({"error": "No job description found. Run the scraper first to save job details."}), 400
 
-    # Build resume text from sections
+    # Seed existing analysis into history if not already there
+    _seed_analysis_history(app_id, app_record)
+
+    # Build resume text from sections — use edited content if available
     sections = db.get_sections_for_resume(app_record['resume_id'])
+    if app_record.get('content_json'):
+        import json as _json
+        try:
+            edited = _json.loads(app_record['content_json'])
+            edited_map = {s['id']: s['html'] for s in edited}
+            sections = [{**s, 'content_html': edited_map.get(s['id'], s['content_html'])}
+                        for s in sections]
+        except (ValueError, KeyError):
+            pass  # Fall back to base sections
     resume_text = _sections_to_text(sections)
 
     # Load job blurbs
@@ -207,16 +265,19 @@ def analyze_application(app_id):
     blurbs_text = _format_blurbs(blurbs) if blurbs else ""
 
     # Build AI client
-    from config import GEMINI_API_KEYS, GEMINI_INTERVIEW_MODELS, CLAUDE_API_KEY, CLAUDE_MODEL
     from ai.client import AIClient
     from ai.prompts import APPLYING_PROMPT, BULLET_ANALYSIS_PROMPT
 
-    client = AIClient(
-        gemini_keys=GEMINI_API_KEYS,
-        gemini_models=GEMINI_INTERVIEW_MODELS,
-        claude_api_key=CLAUDE_API_KEY,
-        claude_model=CLAUDE_MODEL,
-    )
+    client = AIClient.from_config()
+
+    # Optional model override from request body
+    body = request.get_json(silent=True) or {}
+    model_override = body.get('model')
+    if model_override:
+        # Format: "provider/model" e.g. "gemini/gemini-2.5-flash"
+        parts = model_override.split('/', 1)
+        if len(parts) == 2:
+            client.force_model(parts[0], parts[1])
 
     context = f"""JOB DESCRIPTION:
 {job_description}
@@ -248,19 +309,31 @@ RESUME:
     except Exception as e:
         # Save phase 1 even if phase 2 fails
         db.update_application(app_id, analysis_phase1=phase1)
+        db.add_analysis_history(
+            app_id, phase1=phase1, phase2=None,
+            model_used=client.last_model_used, provider=client.last_provider,
+        )
+        history = db.get_analysis_history(app_id)
         return jsonify({
             "analysis_phase1": phase1,
             "analysis_phase2": None,
             "warning": f"Phase 2 failed: {e}",
+            "history": history,
         })
     _log_usage(client, 'resume_analysis', app_record.get('job_id'))
 
-    # Save both phases
+    # Save both phases + history entry
     db.update_application(app_id, analysis_phase1=phase1, analysis_phase2=phase2)
+    db.add_analysis_history(
+        app_id, phase1=phase1, phase2=phase2,
+        model_used=client.last_model_used, provider=client.last_provider,
+    )
 
+    history = db.get_analysis_history(app_id)
     return jsonify({
         "analysis_phase1": phase1,
         "analysis_phase2": phase2,
+        "history": history,
     })
 
 

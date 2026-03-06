@@ -60,6 +60,39 @@ function parseUTC(ts) {
     return new Date(ts.replace(' ', 'T') + 'Z');
 }
 
+function renderAnalysisHistory(historyEntries) {
+    return historyEntries.map((entry, idx) => {
+        const ts = entry.created_at
+            ? new Date(entry.created_at + 'Z').toLocaleString([], {month:'short', day:'numeric', hour:'numeric', minute:'2-digit'})
+            : '';
+        const modelLabel = [entry.provider, entry.model_used].filter(Boolean).join(' / ');
+        const isLatest = idx === 0;
+        const label = isLatest ? `Latest Analysis${ts ? ' \u2014 ' + ts : ''}` : `Analysis${ts ? ' \u2014 ' + ts : ''}`;
+
+        let inner = '';
+        if (entry.phase1) {
+            inner += `<div class="feedback-section card" style="margin-bottom:0.75rem;">
+                <h4 style="margin-bottom:0.5rem;">Profile Assessment & Edits</h4>
+                <div class="markdown-body">${marked.parse(entry.phase1)}</div>
+            </div>`;
+        }
+        if (entry.phase2) {
+            inner += `<div class="feedback-section card">
+                <h4 style="margin-bottom:0.5rem;">Bullet Analysis</h4>
+                <div class="markdown-body">${marked.parse(entry.phase2)}</div>
+            </div>`;
+        }
+
+        return `<details class="analysis-history-entry" style="margin-bottom:0.75rem;border:1px solid var(--border);border-radius:8px;overflow:hidden;"${isLatest ? ' open' : ''}>
+            <summary style="padding:0.75rem 1rem;cursor:pointer;background:var(--bg-card);display:flex;justify-content:space-between;align-items:center;">
+                <span style="font-weight:600;">${escapeHtml(label)}</span>
+                ${modelLabel ? `<span style="font-size:0.75rem;color:var(--text-muted);">${escapeHtml(modelLabel)}</span>` : ''}
+            </summary>
+            <div style="padding:0.75rem 1rem;">${inner}</div>
+        </details>`;
+    }).join('');
+}
+
 // =================== API Layer ===================
 
 const api = {
@@ -270,15 +303,20 @@ const api = {
             body: JSON.stringify({ content_html: contentHtml, content_json: contentJson })
         }).then(r => r.json());
     },
-    async analyzeApplication(id) {
+    async getAIModels() {
+        return fetch('/api/ai-models').then(r => r.json());
+    },
+    async analyzeApplication(id, model) {
         // AI analysis can take 2-3 minutes (two phases); use AbortController for timeout
         const controller = new AbortController();
         const timeoutId = setTimeout(() => controller.abort(), 300000); // 5 min
         try {
-            const r = await fetch(`/api/applications/${id}/analyze`, {
-                method: 'POST',
-                signal: controller.signal,
-            });
+            const opts = { method: 'POST', signal: controller.signal };
+            if (model) {
+                opts.headers = { 'Content-Type': 'application/json' };
+                opts.body = JSON.stringify({ model });
+            }
+            const r = await fetch(`/api/applications/${id}/analyze`, opts);
             clearTimeout(timeoutId);
             const data = await r.json();
             if (!r.ok && !data.error) data.error = `Server error (${r.status})`;
@@ -2049,6 +2087,9 @@ async function loadExpandedResumePhase(jobId) {
     document.getElementById('expanded-resume-upload').style.display = 'none';
     document.getElementById('expanded-resume-workspace').style.display = 'block';
 
+    // Populate model selector (fire-and-forget, don't block resume loading)
+    populateModelSelect();
+
     // Destroy any existing editors
     if (window.resumeEditor) window.resumeEditor.destroyEditors();
 
@@ -2075,16 +2116,22 @@ async function loadExpandedResumePhase(jobId) {
     }
 
     // Determine sections: merge saved edits with section metadata
-    let sections = app.sections || [];
+    let sectionsWithOverlay = app.sections || [];
     if (app.content_json) {
         try {
             const saved = JSON.parse(app.content_json);
-            sections = sections.map(s => {
+            sectionsWithOverlay = sectionsWithOverlay.map(s => {
                 const match = saved.find(ss => ss.id === s.id);
                 return match ? { ...s, content_html: match.html } : s;
             });
         } catch (e) { /* use original sections */ }
     }
+
+    // Keep original (unsplit) sections for suggestion matching
+    const originalSections = sectionsWithOverlay;
+
+    // Split header → headline + contact, summary → summary + keywords
+    let sections = splitSectionsForDisplay(sectionsWithOverlay);
 
     // Initialize TipTap editors
     const container = document.getElementById('resume-sections-container');
@@ -2109,9 +2156,22 @@ async function loadExpandedResumePhase(jobId) {
         container.innerHTML = '<div class="empty-state">Resume content not available.</div>';
     }
 
-    // Display analysis if available
+    // Display analysis history (collapsible) or empty state
     const feedbackPanel = document.getElementById('ai-feedback-panel');
-    if (app.analysis_phase1 || app.analysis_phase2) {
+    const history = app.history || [];
+    if (history.length > 0) {
+        feedbackPanel.innerHTML = renderAnalysisHistory(history);
+        _analysisHtmlCache = feedbackPanel.innerHTML;
+
+        // Use latest analysis for suggestions
+        const latest = history[0];
+        if (window.resumeEditor) {
+            let suggestions = parseBulletAnalysis(latest.phase2);
+            suggestions = suggestions.concat(parsePhase1Suggestions(latest.phase1, originalSections));
+            window.resumeEditor.setBulletSuggestions(suggestions);
+        }
+    } else if (app.analysis_phase1 || app.analysis_phase2) {
+        // Legacy: no history entries yet but analysis columns exist
         let html = '';
         if (app.analysis_phase1) {
             html += `<div class="feedback-section card">
@@ -2128,9 +2188,9 @@ async function loadExpandedResumePhase(jobId) {
         feedbackPanel.innerHTML = html;
         _analysisHtmlCache = html;
 
-        // Parse bullet suggestions and send to editor
-        if (app.analysis_phase2 && window.resumeEditor) {
-            const suggestions = parseBulletAnalysis(app.analysis_phase2);
+        if (window.resumeEditor) {
+            let suggestions = parseBulletAnalysis(app.analysis_phase2);
+            suggestions = suggestions.concat(parsePhase1Suggestions(app.analysis_phase1, originalSections));
             window.resumeEditor.setBulletSuggestions(suggestions);
         }
     } else {
@@ -2563,6 +2623,54 @@ async function handleResumeUpload(e) {
     }
 }
 
+let _modelsLoaded = false;
+async function populateModelSelect() {
+    if (_modelsLoaded) return;
+    const list = document.getElementById('model-menu-list');
+    if (!list) return;
+    try {
+        const data = await api.getAIModels();
+        if (!data.models || !data.models.length) return;
+        const grouped = {};
+        for (const m of data.models) {
+            if (!grouped[m.provider]) grouped[m.provider] = [];
+            grouped[m.provider].push(m);
+        }
+        let html = '';
+        for (const [provider, models] of Object.entries(grouped)) {
+            html += `<div class="model-optgroup">${provider}</div>`;
+            for (const m of models) {
+                html += `<label class="model-option"><input type="radio" name="ai-model" value="${m.provider}/${m.model}"> ${m.label}</label>`;
+            }
+        }
+        list.innerHTML = html;
+        _modelsLoaded = true;
+    } catch (e) {
+        console.warn('Failed to load AI models:', e);
+    }
+}
+
+function toggleModelMenu(e) {
+    e.stopPropagation();
+    const menu = document.getElementById('model-menu');
+    menu.classList.toggle('open');
+    if (menu.classList.contains('open')) {
+        // Close on outside click
+        const close = (ev) => {
+            if (!menu.contains(ev.target)) {
+                menu.classList.remove('open');
+                document.removeEventListener('click', close);
+            }
+        };
+        setTimeout(() => document.addEventListener('click', close), 0);
+    }
+}
+
+function getSelectedModel() {
+    const checked = document.querySelector('input[name="ai-model"]:checked');
+    return checked ? checked.value : '';
+}
+
 async function handleAnalyze() {
     console.log('[Analyze] currentAppId =', currentAppId);
     if (!currentAppId) {
@@ -2589,45 +2697,69 @@ async function handleAnalyze() {
     btn.disabled = true;
     btn.innerHTML = '<span class="loading-spinner"></span> Analyzing...';
 
+    // Keep old analysis visible, append loading indicator at top
     const feedbackPanel = document.getElementById('ai-feedback-panel');
-    feedbackPanel.innerHTML = `
-        <div class="empty-state">
-            <div class="loading-spinner" style="width:24px;height:24px;margin:0 auto 1rem;"></div>
-            <p>Running AI analysis...</p>
-            <p style="font-size:0.75rem;color:var(--text-muted);margin-top:0.5rem;">
-                This may take 30-60 seconds (two-phase analysis).
-            </p>
-        </div>`;
+    const loadingBanner = `<div class="analysis-loading-banner" style="padding:1rem;margin-bottom:1rem;border:1px solid var(--border);border-radius:8px;background:var(--bg-card);text-align:center;">
+        <div class="loading-spinner" style="width:20px;height:20px;margin:0 auto 0.5rem;"></div>
+        <p style="margin:0;font-size:0.85rem;">Running AI analysis... (30-60s)</p>
+    </div>`;
+    feedbackPanel.insertAdjacentHTML('afterbegin', loadingBanner);
 
     try {
-        console.log('[Analyze] calling analyzeApplication with app.id =', app.id);
-        const result = await api.analyzeApplication(app.id);
+        const selectedModel = getSelectedModel();
+        console.log('[Analyze] calling analyzeApplication with app.id =', app.id, 'model =', selectedModel || 'auto');
+        const result = await api.analyzeApplication(app.id, selectedModel);
         console.log('[Analyze] result =', result);
         if (result.error) {
             showToast(result.error, 'error');
-            feedbackPanel.innerHTML = `<div class="error-state" style="padding:1rem;">${escapeHtml(result.error)}</div>`;
+            const banner = feedbackPanel.querySelector('.analysis-loading-banner');
+            if (banner) banner.outerHTML = `<div class="error-state" style="padding:1rem;">${escapeHtml(result.error)}</div>`;
         } else {
-            let html = '';
-            if (result.analysis_phase1) {
-                html += `<div class="feedback-section">
-                    <h4>Profile Assessment & Resume Edits</h4>
-                    <div class="markdown-body">${marked.parse(result.analysis_phase1)}</div>
-                </div>`;
-            }
-            if (result.analysis_phase2) {
-                html += `<div class="feedback-section">
-                    <h4>Bullet Analysis</h4>
-                    <div class="markdown-body">${marked.parse(result.analysis_phase2)}</div>
-                </div>`;
+            // Render full history (includes the new run)
+            const history = result.history || [];
+            if (history.length > 0) {
+                feedbackPanel.innerHTML = renderAnalysisHistory(history);
+            } else {
+                // Fallback if no history returned
+                let html = '';
+                if (result.analysis_phase1) {
+                    html += `<div class="feedback-section">
+                        <h4>Profile Assessment & Resume Edits</h4>
+                        <div class="markdown-body">${marked.parse(result.analysis_phase1)}</div>
+                    </div>`;
+                }
+                if (result.analysis_phase2) {
+                    html += `<div class="feedback-section">
+                        <h4>Bullet Analysis</h4>
+                        <div class="markdown-body">${marked.parse(result.analysis_phase2)}</div>
+                    </div>`;
+                }
+                feedbackPanel.innerHTML = html;
             }
             if (result.warning) {
-                html += `<div class="empty-state" style="color:var(--warning);">${escapeHtml(result.warning)}</div>`;
+                feedbackPanel.insertAdjacentHTML('afterbegin',
+                    `<div class="empty-state" style="color:var(--warning);">${escapeHtml(result.warning)}</div>`);
             }
-            feedbackPanel.innerHTML = html;
-            _analysisHtmlCache = html;
+            _analysisHtmlCache = feedbackPanel.innerHTML;
 
-            if (result.analysis_phase2 && window.resumeEditor) {
-                const suggestions = parseBulletAnalysis(result.analysis_phase2);
+            // Use latest analysis for suggestions
+            const latest = (result.history && result.history[0]) || result;
+            const p1 = latest.phase1 || latest.analysis_phase1;
+            const p2 = latest.phase2 || latest.analysis_phase2;
+            if (window.resumeEditor) {
+                // Apply content_json overlay so suggestions compare against edited content
+                let editedSections = app.sections || [];
+                if (app.content_json) {
+                    try {
+                        const saved = JSON.parse(app.content_json);
+                        editedSections = editedSections.map(s => {
+                            const match = saved.find(ss => ss.id === s.id);
+                            return match ? { ...s, content_html: match.html } : s;
+                        });
+                    } catch (e) { /* use original */ }
+                }
+                let suggestions = parseBulletAnalysis(p2);
+                suggestions = suggestions.concat(parsePhase1Suggestions(p1, editedSections));
                 window.resumeEditor.setBulletSuggestions(suggestions);
             }
 
@@ -2636,7 +2768,8 @@ async function handleAnalyze() {
     } catch (e) {
         console.error('[Analyze] exception:', e);
         showToast('Analysis failed: ' + e.message, 'error');
-        feedbackPanel.innerHTML = `<div class="error-state" style="padding:1rem;">Analysis failed: ${escapeHtml(e.message)}</div>`;
+        const banner = feedbackPanel.querySelector('.analysis-loading-banner');
+        if (banner) banner.outerHTML = `<div class="error-state" style="padding:1rem;">Analysis failed: ${escapeHtml(e.message)}</div>`;
     } finally {
         btn.disabled = false;
         btn.textContent = 'Analyze';
@@ -2779,8 +2912,132 @@ async function handleApply() {
 
 // =================== Bullet Analysis & Comparison ===================
 
+/**
+ * Parse Phase 1 (Profile Assessment) for headline, summary, and skills suggestions.
+ * These get merged into the bullet suggestions array so the Improve button picks them up.
+ */
+function parsePhase1Suggestions(markdown, sections) {
+    if (!markdown) return [];
+    markdown = markdown.replace(/\r/g, '');  // normalize CRLF → LF
+    const suggestions = [];
+
+    // Normalize text for comparison — lowercase, strip non-alphanumeric
+    const norm = t => (t || '').toLowerCase().replace(/[^a-z0-9]/g, '');
+
+    // --- Headline ---
+    // Pattern: **Headline**\n*   *Recommendation*: <text>
+    const headlineMatch = markdown.match(
+        /\*\*Headline\*\*[\s\S]*?\*Recommendation\*\s*:\s*(.+?)(?:\n|$)/i
+    );
+    if (headlineMatch) {
+        // Find current headline text from the header section
+        const headerSection = sections?.find(s => s.section_type === 'header');
+        if (headerSection) {
+            // Split on block-level tags to separate headline from contact info
+            const blocks = headerSection.content_html
+                .replace(/<\/(h[1-6]|p|div)>/gi, '\n')
+                .replace(/<[^>]+>/g, '')
+                .replace(/&amp;/g, '&').replace(/&emsp;/g, '  ')
+                .split('\n').map(l => l.trim()).filter(Boolean);
+            // First block is the headline (name | title or just title)
+            const firstLine = blocks[0] || '';
+            if (firstLine) {
+                const rewrite = headlineMatch[1].trim().replace(/^"/, '').replace(/"$/, '').replace(/^\*{1,2}/, '').replace(/\*{1,2}$/, '');
+                const alreadyMatch = norm(firstLine) === norm(rewrite);
+                suggestions.push({
+                    target: 'headline',
+                    rating: alreadyMatch ? 'STRONG' : 'MODERATE',
+                    current: firstLine,
+                    issue: alreadyMatch ? 'Headline is already well-tailored.' : 'Headline can be better tailored to the target role.',
+                    rewrite,
+                });
+            }
+        }
+    }
+
+    // --- Summary ---
+    // Pattern: **Summary**\n*Critique*: ...\n*Recommendation*: <text>
+    const summaryBlock = markdown.match(
+        /\*\*Summary\*\*[\s\S]*?\*Recommendation\*\s*:\s*([\s\S]+?)(?=\n\*\*|\n####|\n---|\n#{1,3}\s|$)/i
+    );
+    if (summaryBlock) {
+        const summarySection = sections?.find(s => s.section_type === 'summary');
+        if (summarySection) {
+            const summaryText = summarySection.content_html
+                .replace(/<[^>]+>/g, '').replace(/&amp;/g, '&').replace(/&emsp;/g, '  ').trim();
+            // Get the first paragraph (the actual summary blurb, not skills/tools lines)
+            const firstPara = summaryText.split('\n').filter(l => l.trim())[0]?.trim();
+            if (firstPara && firstPara.length > 30) {
+                const rewrite = summaryBlock[1].trim()
+                    .replace(/\n\s*\n/g, ' ')
+                    .replace(/^"/, '').replace(/"$/, '');
+                const alreadyMatch = norm(firstPara) === norm(rewrite);
+                const critiqueMatch = markdown.match(
+                    /\*\*Summary\*\*[\s\S]*?\*Critique\*\s*:\s*(.+?)(?:\n|$)/i
+                );
+                suggestions.push({
+                    target: 'summary',
+                    rating: alreadyMatch ? 'STRONG' : 'MODERATE',
+                    current: firstPara,
+                    issue: alreadyMatch ? 'Summary is already well-written.' : (critiqueMatch ? critiqueMatch[1].trim() : 'Summary can be improved.'),
+                    rewrite,
+                });
+            }
+        }
+    }
+
+    // --- Skills Section ---
+    // Pattern: **Skills Section**\n*Critique*: ...\n*Recommendation*:\n  *Industry/Domain*: ...\n  *Hard Skills/Tools*: ...
+    const skillsBlock = markdown.match(
+        /\*\*Skills\s*Section\*\*[\s\S]*?\*Critique\*\s*:\s*([\s\S]+?)(?=\n\*\*|\n####|\n---|\n#{1,3}\s|$)/i
+    );
+    if (skillsBlock) {
+        const skillsCritique = skillsBlock[1].split(/\*Recommendation\*/i)[0]?.trim() || '';
+
+        // Extract the recommended skills
+        const domainMatch = markdown.match(/\*{1,2}Industry[\\\/]?Domain\*{1,2}\s*:\s*(.+?)(?:\n|$)/i);
+        const toolsMatch = markdown.match(/\*{1,2}Hard\s*Skills[\\\/]?Tools\*{1,2}\s*:\s*(.+?)(?:\n|$)/i);
+        // Find current skills/tools lines in the summary section
+        const summarySection = sections?.find(s => s.section_type === 'summary');
+        if (summarySection) {
+            const lines = summarySection.content_html
+                .replace(/<\/(h[1-6]|p|div|li)>/gi, '\n')
+                .replace(/<[^>]+>/g, '').replace(/&amp;/g, '&').replace(/&emsp;/g, '  ')
+                .split('\n').map(l => l.trim()).filter(Boolean);
+
+            for (const line of lines) {
+                if (/^skills\s*:/i.test(line) && domainMatch) {
+                    const rewrite = 'Skills: ' + domainMatch[1].trim().replace(/^"/, '').replace(/"$/, '');
+                    const alreadyMatch = norm(line) === norm(rewrite);
+                    suggestions.push({
+                        target: 'skills',
+                        rating: alreadyMatch ? 'STRONG' : 'WEAK',
+                        current: line,
+                        issue: alreadyMatch ? 'Skills are already well-aligned.' : skillsCritique,
+                        rewrite,
+                    });
+                }
+                if (/^tools\s*:/i.test(line) && toolsMatch) {
+                    const rewrite = 'Tools: ' + toolsMatch[1].trim().replace(/^"/, '').replace(/"$/, '');
+                    const alreadyMatch = norm(line) === norm(rewrite);
+                    suggestions.push({
+                        target: 'tools',
+                        rating: alreadyMatch ? 'STRONG' : 'MODERATE',
+                        current: line,
+                        issue: alreadyMatch ? 'Tools are already well-aligned.' : 'Tools list can be updated to match the target role.',
+                        rewrite,
+                    });
+                }
+            }
+        }
+    }
+
+    return suggestions;
+}
+
 function parseBulletAnalysis(markdown) {
     if (!markdown) return [];
+    markdown = markdown.replace(/\r/g, '');  // normalize CRLF → LF
     const improvements = [];
 
     const parts = markdown.split(/\*\*Bullet\s+\d+[^*]*\*\*/i);
@@ -2791,7 +3048,9 @@ function parseBulletAnalysis(markdown) {
         const ratingMatch = block.match(/\*\*Rating\*\*\s*:\s*(\w+)/i);
         const currentMatch = block.match(/\*\*Current(?:\s*(?:Text)?)?\*\*\s*:\s*"?([^"\n]+)"?/i);
         const issueMatch = block.match(/\*\*(?:Issue|Analysis)\*\*\s*:\s*([^\n]+)/i);
-        const rewriteMatch = block.match(/\*\*(?:Rewrite|Recommendation)\*\*\s*:\s*"?(.+?)"?\s*$/im);
+        // Try **Rewrite** first (specific), then **Recommendation** (may have inline text for STRONG bullets)
+        const rewriteMatch = block.match(/\*\*Rewrite\*\*\s*:\s*"?(.+?)"?\s*$/im)
+            || block.match(/\*\*Recommendation\*\*\s*:\s*"?([^*\n].+?)"?\s*$/im);
 
         if (currentMatch) {
             improvements.push({
@@ -5961,7 +6220,10 @@ function escapeHtml(str) {
 function sectionTypeLabel(type) {
     const labels = {
         header: 'Header',
+        headline: 'Headline',
+        contact: 'Contact',
         summary: 'Summary',
+        keywords: 'Keywords',
         experience: 'Experience',
         education: 'Education',
         skills: 'Skills',
@@ -5970,6 +6232,56 @@ function sectionTypeLabel(type) {
         interests: 'Interests',
     };
     return labels[type] || type;
+}
+
+/**
+ * Split header and summary sections into finer sub-sections for display.
+ * header → headline + contact
+ * summary → summary (blurb) + keywords (Skills:/Tools: lines)
+ * Sub-sections carry _parentId and _originalType for merging on save.
+ */
+function splitSectionsForDisplay(sections) {
+    const result = [];
+    for (const s of sections) {
+        if (s.section_type === 'header') {
+            const doc = new DOMParser().parseFromString(s.content_html || '', 'text/html');
+            const blocks = [...doc.body.children];
+            const headlineBlocks = [];
+            const contactBlocks = [];
+            for (const block of blocks) {
+                const text = block.textContent || '';
+                if (contactBlocks.length > 0 || /(\(\d{3}\)|@\w+\.\w|linkedin|portfolio)/i.test(text)) {
+                    contactBlocks.push(block.outerHTML);
+                } else {
+                    headlineBlocks.push(block.outerHTML);
+                }
+            }
+            result.push({ ...s, section_type: 'headline', content_html: headlineBlocks.join(''), _parentId: s.id, _originalType: 'header' });
+            if (contactBlocks.length) {
+                result.push({ ...s, id: s.id + '_contact', section_type: 'contact', content_html: contactBlocks.join(''), _parentId: s.id, _originalType: 'header' });
+            }
+        } else if (s.section_type === 'summary') {
+            const doc = new DOMParser().parseFromString(s.content_html || '', 'text/html');
+            const blocks = [...doc.body.children];
+            const summaryBlocks = [];
+            const keywordBlocks = [];
+            for (const block of blocks) {
+                const text = (block.textContent || '').trim();
+                if (/^(skills|tools)\s*:/i.test(text)) {
+                    keywordBlocks.push(block.outerHTML);
+                } else {
+                    summaryBlocks.push(block.outerHTML);
+                }
+            }
+            result.push({ ...s, section_type: 'summary', content_html: summaryBlocks.join(''), _parentId: s.id, _originalType: 'summary' });
+            if (keywordBlocks.length) {
+                result.push({ ...s, id: s.id + '_keywords', section_type: 'keywords', content_html: keywordBlocks.join(''), _parentId: s.id, _originalType: 'summary' });
+            }
+        } else {
+            result.push(s);
+        }
+    }
+    return result;
 }
 
 function showToast(message, type = 'success') {

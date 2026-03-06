@@ -525,7 +525,17 @@
                 <!-- Resume Workspace -->
                 <div id="expanded-resume-workspace" style="display:none;">
                     <div id="app-toolbar" class="app-toolbar">
-                        <button id="btn-analyze" class="btn btn-primary" onclick="handleAnalyze()">Analyze</button>
+                        <div class="analyze-split-btn">
+                            <button id="btn-analyze" class="btn btn-primary" onclick="handleAnalyze()">Analyze</button>
+                            <button class="btn btn-primary analyze-toggle" onclick="toggleModelMenu(event)" title="Choose model">&#9662;</button>
+                            <div id="model-menu" class="model-menu">
+                                <div class="model-menu-header">AI Model</div>
+                                <label class="model-option">
+                                    <input type="radio" name="ai-model" value="" checked> Auto (rotation)
+                                </label>
+                                <div id="model-menu-list"></div>
+                            </div>
+                        </div>
                         <button id="btn-switch-resume" class="btn btn-ghost" onclick="showSwitchResumeModal()" style="display:none;">Switch Resume</button>
                         <div class="export-dropdown">
                             <button class="btn btn-ghost" onclick="toggleExportMenu(event)">Export &#9662;</button>
