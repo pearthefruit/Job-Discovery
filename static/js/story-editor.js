@@ -1,10 +1,10 @@
 /**
  * TipTap Story Editor Module
  *
- * Multi-instance editor for interview stage stories.
- * Lazy initialization — editors are created only when a story is expanded,
- * so tab switches are fast regardless of how many stories are assigned.
- * Shared toolbar above all stories, auto-save on update with 1.5s debounce.
+ * Multi-instance, multi-group editor for stories across contexts
+ * (Story Bank, Interview Prep, etc.). Each group gets its own toolbar,
+ * editors, and save callback. Lazy initialization — editors created
+ * only when a story is expanded. Auto-save on update with 1.5s debounce.
  *
  * Exposes window.storyEditor API for app.js integration.
  */
@@ -14,16 +14,45 @@ import StarterKit from 'https://esm.sh/@tiptap/starter-kit@2.11.5';
 import Underline from 'https://esm.sh/@tiptap/extension-underline@2.11.5';
 import Link from 'https://esm.sh/@tiptap/extension-link@2.11.5';
 
-let editors = {};          // { storyId: Editor }
-let storyDataMap = {};     // { storyId: { htmlContent } } — for lazy init
-let activeEditor = null;   // { id, editor }
-let saveTimers = {};
-let _onSaveCallback = null;
-let _toolbarEl = null;
+// Multi-group state — each group has independent editors, toolbar, and callbacks
+const groups = new Map();
+
+// Track which group is currently active (for toolbar commands)
+let _activeGroupName = null;
+
+function getGroup(name) {
+    return groups.get(name);
+}
+
+function createGroup(name) {
+    const group = {
+        editors: {},
+        storyDataMap: {},
+        activeEditor: null,
+        saveTimers: {},
+        onSaveCallback: null,
+        toolbarEl: null,
+        elementPrefix: 'story-editor',
+        cardSelector: '.assigned-story-card',
+    };
+    groups.set(name, group);
+    return group;
+}
+
+// =================== TipTap Extensions (shared) ===================
+
+const EDITOR_EXTENSIONS = [
+    StarterKit.configure({ heading: { levels: [2, 3] } }),
+    Underline,
+    Link.configure({
+        openOnClick: false,
+        HTMLAttributes: { target: '_blank', rel: 'noopener' },
+    }),
+];
 
 // =================== Shared Toolbar ===================
 
-function createToolbar() {
+function createToolbar(groupName) {
     const toolbar = document.createElement('div');
     toolbar.className = 'story-editor-toolbar story-toolbar-shared';
 
@@ -56,7 +85,7 @@ function createToolbar() {
         if (item.style) btn.setAttribute('style', item.style);
         btn.addEventListener('mousedown', (e) => {
             e.preventDefault();
-            runCommand(item.cmd);
+            runCommand(groupName, item.cmd);
         });
         toolbar.appendChild(btn);
     });
@@ -64,15 +93,16 @@ function createToolbar() {
     // Save indicator (right-aligned)
     const indicator = document.createElement('span');
     indicator.className = 'story-save-indicator';
-    indicator.id = 'story-save-indicator';
+    indicator.id = `story-save-indicator-${groupName}`;
     toolbar.appendChild(indicator);
 
     return toolbar;
 }
 
-function runCommand(cmd) {
-    if (!activeEditor) return;
-    const chain = activeEditor.editor.chain().focus();
+function runCommand(groupName, cmd) {
+    const group = getGroup(groupName);
+    if (!group || !group.activeEditor) return;
+    const chain = group.activeEditor.editor.chain().focus();
     switch (cmd) {
         case 'bold': chain.toggleBold().run(); break;
         case 'italic': chain.toggleItalic().run(); break;
@@ -81,14 +111,15 @@ function runCommand(cmd) {
         case 'heading3': chain.toggleHeading({ level: 3 }).run(); break;
         case 'bulletList': chain.toggleBulletList().run(); break;
         case 'orderedList': chain.toggleOrderedList().run(); break;
-        case 'link': handleLinkCommand(); return;
+        case 'link': handleLinkCommand(groupName); return;
     }
-    updateToolbarState();
+    updateToolbarState(groupName);
 }
 
-function handleLinkCommand() {
-    if (!activeEditor) return;
-    const ed = activeEditor.editor;
+function handleLinkCommand(groupName) {
+    const group = getGroup(groupName);
+    if (!group || !group.activeEditor) return;
+    const ed = group.activeEditor.editor;
     const prevUrl = ed.getAttributes('link').href || '';
     if (prevUrl) {
         const action = prompt(`Current link: ${prevUrl}\n\nEnter new URL (or leave empty to remove):`, prevUrl);
@@ -103,13 +134,14 @@ function handleLinkCommand() {
         if (!url || !url.trim()) return;
         ed.chain().focus().setLink({ href: url.trim() }).run();
     }
-    updateToolbarState();
+    updateToolbarState(groupName);
 }
 
-function updateToolbarState() {
-    if (!_toolbarEl) return;
-    const ed = activeEditor ? activeEditor.editor : null;
-    _toolbarEl.querySelectorAll('button[data-cmd]').forEach(btn => {
+function updateToolbarState(groupName) {
+    const group = getGroup(groupName);
+    if (!group || !group.toolbarEl) return;
+    const ed = group.activeEditor ? group.activeEditor.editor : null;
+    group.toolbarEl.querySelectorAll('button[data-cmd]').forEach(btn => {
         const cmd = btn.dataset.cmd;
         let active = false;
         if (ed) {
@@ -128,8 +160,8 @@ function updateToolbarState() {
     });
 }
 
-function showSaveStatus(text, className) {
-    const el = document.getElementById('story-save-indicator');
+function showSaveStatus(groupName, text, className) {
+    const el = document.getElementById(`story-save-indicator-${groupName}`);
     if (!el) return;
     el.textContent = text;
     el.className = 'story-save-indicator ' + (className || '');
@@ -145,10 +177,12 @@ function showSaveStatus(text, className) {
 
 // =================== Lazy Editor Creation ===================
 
-function _createEditor(id) {
-    const data = storyDataMap[id];
+function _createEditor(groupName, id) {
+    const group = getGroup(groupName);
+    if (!group) return null;
+    const data = group.storyDataMap[id];
     if (!data) return null;
-    const wrapper = document.getElementById(`story-editor-${id}`);
+    const wrapper = document.getElementById(`${group.elementPrefix}-${id}`);
     if (!wrapper) return null;
 
     // Clear static HTML placeholder before TipTap mounts
@@ -156,117 +190,153 @@ function _createEditor(id) {
 
     const editor = new Editor({
         element: wrapper,
-        extensions: [
-            StarterKit.configure({ heading: { levels: [2, 3] } }),
-            Underline,
-            Link.configure({
-                openOnClick: false,
-                HTMLAttributes: { target: '_blank', rel: 'noopener' },
-            }),
-        ],
+        extensions: EDITOR_EXTENSIONS,
         content: data.htmlContent || '',
         onFocus() {
-            activeEditor = { id, editor };
-            updateToolbarState();
-            document.querySelectorAll('.assigned-story-card.story-editing')
-                .forEach(c => c.classList.remove('story-editing'));
-            const card = wrapper.closest('.assigned-story-card');
+            group.activeEditor = { id, editor };
+            _activeGroupName = groupName;
+            updateToolbarState(groupName);
+            // Remove editing highlight from all cards in this group
+            const container = group.toolbarEl ? group.toolbarEl.parentNode : null;
+            if (container) {
+                container.querySelectorAll(`${group.cardSelector}.story-editing`)
+                    .forEach(c => c.classList.remove('story-editing'));
+            }
+            const card = wrapper.closest(group.cardSelector);
             if (card) card.classList.add('story-editing');
         },
         onBlur() {
             setTimeout(() => {
-                if (activeEditor && activeEditor.id === id && !editor.isFocused) {
-                    const card = wrapper.closest('.assigned-story-card');
+                if (group.activeEditor && group.activeEditor.id === id && !editor.isFocused) {
+                    const card = wrapper.closest(group.cardSelector);
                     if (card) card.classList.remove('story-editing');
                 }
             }, 150);
         },
         onUpdate() {
-            updateToolbarState();
-            showSaveStatus('Editing...', 'editing');
-            clearTimeout(saveTimers[id]);
-            saveTimers[id] = setTimeout(() => {
-                if (_onSaveCallback) {
-                    _onSaveCallback(id, editor.getHTML());
+            updateToolbarState(groupName);
+            showSaveStatus(groupName, 'Editing...', 'editing');
+            clearTimeout(group.saveTimers[id]);
+            group.saveTimers[id] = setTimeout(() => {
+                if (group.onSaveCallback) {
+                    group.onSaveCallback(id, editor.getHTML());
                 }
             }, 1500);
         },
         onSelectionUpdate() {
-            updateToolbarState();
+            updateToolbarState(groupName);
         },
     });
 
-    editors[id] = editor;
+    group.editors[id] = editor;
     return editor;
 }
 
 /**
  * Called when a story is expanded — creates the TipTap editor if not yet initialized.
- * Since the grid animation takes 0.3s and TipTap init takes ~20ms, the editor is
- * ready well before the content becomes visible.
  */
-function ensureEditor(storyId) {
-    if (editors[storyId]) return;
-    _createEditor(storyId);
+function ensureEditor(groupName, storyId) {
+    const group = getGroup(groupName);
+    if (!group || group.editors[storyId]) return;
+    _createEditor(groupName, storyId);
 }
 
 // =================== Init / Destroy ===================
 
-function initEditors(container, storyData, callbacks) {
-    destroyEditors();
-    _onSaveCallback = callbacks.onSave || null;
+function initEditors(groupName, container, storyData, callbacks) {
+    // Destroy existing group if re-initializing
+    if (groups.has(groupName)) {
+        destroyEditors(groupName);
+    }
+
+    const group = createGroup(groupName);
+    group.onSaveCallback = callbacks.onSave || null;
+    group.elementPrefix = callbacks.elementPrefix || 'story-editor';
+    group.cardSelector = callbacks.cardSelector || '.assigned-story-card';
 
     if (!storyData.length) return;
 
     // Store data for lazy init — don't create editors yet
     storyData.forEach(({ id, htmlContent }) => {
-        storyDataMap[id] = { htmlContent };
+        group.storyDataMap[id] = { htmlContent };
     });
 
     // Create shared toolbar at top of container
-    _toolbarEl = createToolbar();
-    container.insertBefore(_toolbarEl, container.firstChild);
+    group.toolbarEl = createToolbar(groupName);
+    container.insertBefore(group.toolbarEl, container.firstChild);
 }
 
-function destroyEditors() {
+function destroyEditors(groupName) {
+    const group = getGroup(groupName);
+    if (!group) return;
+
     // Flush any pending saves
-    Object.entries(saveTimers).forEach(([id, timer]) => {
+    Object.entries(group.saveTimers).forEach(([id, timer]) => {
         clearTimeout(timer);
-        const editor = editors[id];
-        if (editor && _onSaveCallback) {
-            _onSaveCallback(parseInt(id), editor.getHTML());
+        const editor = group.editors[id];
+        if (editor && group.onSaveCallback) {
+            group.onSaveCallback(parseInt(id), editor.getHTML());
         }
     });
-    saveTimers = {};
+    group.saveTimers = {};
 
     // Destroy all editors
-    Object.values(editors).forEach(e => e.destroy());
-    editors = {};
-    storyDataMap = {};
-    activeEditor = null;
+    Object.values(group.editors).forEach(e => e.destroy());
 
     // Remove toolbar
-    if (_toolbarEl && _toolbarEl.parentNode) {
-        _toolbarEl.remove();
+    if (group.toolbarEl && group.toolbarEl.parentNode) {
+        group.toolbarEl.remove();
     }
-    _toolbarEl = null;
-    _onSaveCallback = null;
+
+    // Clear active group if it was this one
+    if (_activeGroupName === groupName) {
+        _activeGroupName = null;
+    }
+
+    groups.delete(groupName);
 }
 
-function getHTML(storyId) {
-    const editor = editors[storyId];
+function destroyAll() {
+    for (const name of [...groups.keys()]) {
+        destroyEditors(name);
+    }
+}
+
+function getHTML(groupName, storyId) {
+    const group = getGroup(groupName);
+    if (!group) return '';
+    const editor = group.editors[storyId];
     return editor ? editor.getHTML() : '';
 }
 
-function setContent(storyId, html) {
-    const editor = editors[storyId];
+function setContent(groupName, storyId, html) {
+    const group = getGroup(groupName);
+    if (!group) return;
+    const editor = group.editors[storyId];
     if (editor) {
         editor.commands.setContent(html);
     }
     // Also update stored data so re-expand after reset works
-    if (storyDataMap[storyId]) {
-        storyDataMap[storyId].htmlContent = html;
+    if (group.storyDataMap[storyId]) {
+        group.storyDataMap[storyId].htmlContent = html;
     }
+}
+
+// =================== Standalone Editor (for Add/Create forms) ===================
+
+function createStandaloneEditor(elementId) {
+    const wrapper = document.getElementById(elementId);
+    if (!wrapper) return null;
+    wrapper.innerHTML = '';
+    return new Editor({
+        element: wrapper,
+        extensions: EDITOR_EXTENSIONS,
+        content: '',
+    });
+}
+
+function destroyStandaloneEditor(editor) {
+    if (editor) editor.destroy();
 }
 
 // =================== Export ===================
@@ -274,8 +344,11 @@ function setContent(storyId, html) {
 window.storyEditor = {
     initEditors,
     destroyEditors,
+    destroyAll,
     ensureEditor,
     getHTML,
     setContent,
     showSaveStatus,
+    createStandaloneEditor,
+    destroyStandaloneEditor,
 };

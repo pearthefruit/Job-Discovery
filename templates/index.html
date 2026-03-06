@@ -404,10 +404,7 @@
                         <div class="competency-quick-picks" id="story-competency-picks"></div>
                         <input type="text" id="story-competency-input" class="input" placeholder="Add custom competency... (Enter to add)">
                     </div>
-                    <div class="quill-resize-wrapper" id="story-add-content-wrap" style="min-height:200px;">
-                        <div id="story-add-content-quill"></div>
-                        <div class="resize-handle" data-target="story-add-content-wrap"></div>
-                    </div>
+                    <div class="story-tiptap-wrapper" id="story-add-content-tiptap" style="min-height:120px;"></div>
                 </div>
                 <div class="form-row" style="margin-top:8px;">
                     <button class="btn btn-primary btn-sm" onclick="handleAddStory()">Save Story</button>
@@ -790,10 +787,7 @@
                         <div class="picker-create-form">
                             <input type="text" id="picker-new-title" class="input" placeholder="Story title *">
                             <input type="text" id="picker-new-hook" class="input" placeholder="One-line hook (optional)">
-                            <div class="quill-resize-wrapper" id="picker-new-content-resize" style="min-height:140px;">
-                                <div id="picker-new-content-editor"></div>
-                                <div class="resize-handle" data-target="picker-new-content-resize"></div>
-                            </div>
+                            <div class="story-tiptap-wrapper" id="picker-new-content-editor" style="min-height:120px;"></div>
                             <input type="text" id="picker-new-tags" class="input" placeholder="Tags (comma-separated, optional)">
                             <input type="text" id="picker-new-company" class="input" placeholder="Company (optional)">
                             <input type="text" id="picker-new-competency" class="input" placeholder="Competencies (comma-separated, optional)">

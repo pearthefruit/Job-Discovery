@@ -3528,7 +3528,6 @@ function toggleIgnoredBucket() {
 
 // =================== Stories ===================
 
-let _storyQuillEditors = {}; // track Quill editors for story bank editing
 
 // =================== Competency Picker Helpers ===================
 
@@ -3699,7 +3698,7 @@ function syncCompetencyPicks(containerId) {
 
 function renderStories(stories) {
     _storiesCache = stories;
-    _storyQuillEditors = {};
+    if (window.storyEditor) window.storyEditor.destroyEditors('bank');
     applyStoryFilters();
 }
 
@@ -3756,6 +3755,19 @@ function applyStoryFilters() {
             container.innerHTML = filtered.map(s => renderStoryCard(s)).join('');
         }
     }
+
+    // Initialize TipTap editor group for story bank (lazy — editors created on expand)
+    if (window.storyEditor && filtered.length) {
+        const storyData = filtered.map(s => ({
+            id: s.id,
+            htmlContent: contentToHtml(s.content || ''),
+        }));
+        window.storyEditor.initEditors('bank', container, storyData, {
+            onSave: (storyId, html) => autoSaveStoryBankContent(storyId, html),
+            elementPrefix: 'story-bank-editor',
+            cardSelector: '.story-card',
+        });
+    }
 }
 
 function renderStoryCard(story) {
@@ -3781,7 +3793,6 @@ function renderStoryCard(story) {
                 <div class="story-meta-right">${competencyChips}${tagChips}</div>
                 <div class="story-company-col">${companyBadge}</div>
                 <div class="story-card-actions" onclick="event.stopPropagation()">
-                    <button class="btn btn-ghost btn-sm" onclick="showEditStory(${story.id})">Edit</button>
                     <button class="btn btn-danger btn-sm" onclick="handleDeleteStory(${story.id})">Delete</button>
                 </div>
             </div>
@@ -3799,21 +3810,7 @@ function renderStoryCard(story) {
                     <input type="text" id="inline-competency-input-${story.id}" class="input input-inline" placeholder="Add competency... (Enter)" onkeydown="if(event.key==='Enter'){this.blur();}">
                 </div>
             </div>
-            <div class="markdown-body">${contentHtml}</div>
-        </div>
-        <div class="story-edit-form" id="story-edit-${story.id}" style="display:none;">
-            <div class="form-stack">
-                <input type="text" class="input" id="edit-title-${story.id}" value="${escapeHtml(story.title)}" placeholder="Title">
-                <input type="text" class="input" id="edit-hook-${story.id}" value="${escapeHtml(story.hook || '')}" placeholder="Hook">
-                <div class="quill-resize-wrapper" id="edit-content-wrap-${story.id}" style="min-height:200px;">
-                    <div id="edit-content-quill-${story.id}"></div>
-                    <div class="resize-handle" data-target="edit-content-wrap-${story.id}"></div>
-                </div>
-            </div>
-            <div class="form-row" style="margin-top:8px;">
-                <button class="btn btn-primary btn-sm" onclick="handleSaveStoryEdit(${story.id})">Save</button>
-                <button class="btn btn-ghost btn-sm" onclick="hideEditStory(${story.id})">Cancel</button>
-            </div>
+            <div class="story-tiptap-wrapper" id="story-bank-editor-${story.id}">${contentHtml}</div>
         </div>
     </div>`;
 }
@@ -3980,6 +3977,11 @@ function toggleStoryContent(storyId) {
         if (chevron) chevron.style.transform = 'rotate(90deg)';
         if (card) card.classList.add('expanded');
 
+        // Lazy-init TipTap editor for this story
+        if (window.storyEditor) {
+            window.storyEditor.ensureEditor('bank', storyId);
+        }
+
         // Initialize inline competency picker on first expand
         const picksEl = document.getElementById(`inline-competency-picks-${storyId}`);
         if (picksEl && !picksEl.dataset.init) {
@@ -4003,50 +4005,6 @@ function toggleStoryContent(storyId) {
         el.style.display = 'none';
         if (chevron) chevron.style.transform = 'rotate(0deg)';
         if (card) card.classList.remove('expanded');
-    }
-}
-
-function showEditStory(storyId) {
-    const editForm = document.getElementById(`story-edit-${storyId}`);
-    const contentEl = document.getElementById(`story-content-${storyId}`);
-    editForm.style.display = 'block';
-    contentEl.style.display = 'none';
-
-    // Initialize Quill editor if not already done
-    if (!_storyQuillEditors[storyId]) {
-        const story = _storiesCache.find(s => s.id === storyId);
-        const q = initQuill(`edit-content-quill-${storyId}`, QUILL_FULL_TOOLBAR, 'Full story content (SAIL format)...');
-        if (q && story) {
-            q.root.innerHTML = contentToHtml(story.content || '');
-        }
-        _storyQuillEditors[storyId] = q;
-        initResizeHandles();
-    }
-}
-
-function hideEditStory(storyId) {
-    document.getElementById(`story-edit-${storyId}`).style.display = 'none';
-    // Clean up Quill editor reference
-    delete _storyQuillEditors[storyId];
-}
-
-async function handleSaveStoryEdit(storyId) {
-    const title = document.getElementById(`edit-title-${storyId}`).value.trim();
-    const hook = document.getElementById(`edit-hook-${storyId}`).value.trim();
-
-    // Read content from Quill editor
-    const quill = _storyQuillEditors[storyId];
-    const content = quill ? _getQuillHtml(quill) : '';
-
-    if (!title) { showToast('Title is required', 'warning'); return; }
-    const result = await api.updateStory(storyId, { title, hook, content });
-    if (result.error) {
-        showToast(result.error, 'error');
-    } else {
-        showToast('Story updated', 'success');
-        delete _storyQuillEditors[storyId];
-        const stories = await api.getStories();
-        renderStories(stories);
     }
 }
 
@@ -4110,17 +4068,16 @@ function showStoryImport() {
 function hideStoryImport() {
     document.getElementById('story-import-area').style.display = 'none';
 }
-let _quillAddStory = null;
+let _tiptapAddStory = null;
 
 function showAddStory() {
     document.getElementById('story-add-area').style.display = 'block';
     document.getElementById('story-import-area').style.display = 'none';
     document.getElementById('story-builder-area').style.display = 'none';
 
-    // Initialize Quill for add story content
-    if (!_quillAddStory) {
-        _quillAddStory = initQuill('story-add-content-quill', QUILL_FULL_TOOLBAR, 'Full story content (SAIL format)...');
-        initResizeHandles();
+    // Initialize TipTap for add story content
+    if (!_tiptapAddStory && window.storyEditor) {
+        _tiptapAddStory = window.storyEditor.createStandaloneEditor('story-add-content-tiptap');
     }
 
     // Initialize competency picker for add form
@@ -4128,7 +4085,8 @@ function showAddStory() {
 }
 function hideAddStory() {
     document.getElementById('story-add-area').style.display = 'none';
-    _quillAddStory = null;
+    if (window.storyEditor) window.storyEditor.destroyStandaloneEditor(_tiptapAddStory);
+    _tiptapAddStory = null;
 }
 
 async function handleImportStories() {
@@ -4152,7 +4110,7 @@ async function handleImportStories() {
 async function handleAddStory() {
     const title = document.getElementById('story-title').value.trim();
     const hook = document.getElementById('story-hook').value.trim();
-    const content = _quillAddStory ? _getQuillHtml(_quillAddStory) : '';
+    const content = _tiptapAddStory ? _tiptapAddStory.getHTML() : '';
     const tags = document.getElementById('story-tags').value.trim();
     const company = (document.getElementById('story-company')?.value || '').trim();
     const competency = getCompetencyValues('story-competency-chips');
@@ -4173,7 +4131,7 @@ async function handleAddStory() {
         document.getElementById('story-tags').value = '';
         if (document.getElementById('story-company')) document.getElementById('story-company').value = '';
         setCompetencyValues('story-competency-chips', '');
-        _quillAddStory = null;
+        _tiptapAddStory = null;
         const stories = await api.getStories();
         renderStories(stories);
     }
@@ -4184,6 +4142,22 @@ async function handleDeleteStory(id) {
     showToast('Story deleted', 'success');
     const stories = await api.getStories();
     renderStories(stories);
+}
+
+async function autoSaveStoryBankContent(storyId, html) {
+    try {
+        const result = await api.updateStory(storyId, { content: html });
+        if (result.error) {
+            if (window.storyEditor) window.storyEditor.showSaveStatus('bank', 'Save failed', 'error');
+            return;
+        }
+        // Update cache
+        const story = _storiesCache.find(s => s.id === storyId);
+        if (story) story.content = html;
+        if (window.storyEditor) window.storyEditor.showSaveStatus('bank', 'Saved', 'saved');
+    } catch (e) {
+        if (window.storyEditor) window.storyEditor.showSaveStatus('bank', 'Save failed', 'error');
+    }
 }
 
 // Story Builder
@@ -4762,7 +4736,7 @@ async function loadExpandedInterviewPhase(jobId) {
     // Clear stale UI from previous job immediately
     _stagesCache = [];
     _stageStoriesCache = [];
-    if (window.storyEditor) window.storyEditor.destroyEditors();
+    if (window.storyEditor) window.storyEditor.destroyEditors('prep');
     const timelineEl = document.getElementById('stage-timeline-nodes');
     if (timelineEl) timelineEl.innerHTML = '<div style="color:var(--text-muted);font-size:0.8rem;padding:0.5rem;">Loading stages...</div>';
     showStageEmpty();
@@ -5087,7 +5061,7 @@ function renderAssignedStories() {
     if (!container) return;
 
     // Destroy previous TipTap editors before rebuilding
-    if (window.storyEditor) window.storyEditor.destroyEditors();
+    if (window.storyEditor) window.storyEditor.destroyEditors('prep');
 
     if (!_stageStoriesCache.length) {
         container.innerHTML = '<div class="empty-state">No stories assigned. Click "+ Add Story" to get started.</div>';
@@ -5137,7 +5111,7 @@ function renderAssignedStories() {
             id: s.story_id || s.id,
             htmlContent: contentToHtml(s.custom_content || s.content || ''),
         }));
-        window.storyEditor.initEditors(container, storyData, {
+        window.storyEditor.initEditors('prep', container, storyData, {
             onSave: (storyId, html) => autoSaveStoryForStage(storyId, html),
         });
     }
@@ -5300,7 +5274,7 @@ function toggleAssignedStoryContent(storyId) {
 
     // Lazy-init TipTap when expanding (before animation starts, while content is 0-height)
     if (!isOpen && window.storyEditor) {
-        window.storyEditor.ensureEditor(storyId);
+        window.storyEditor.ensureEditor('prep', storyId);
     }
 
     body.classList.toggle('expanded');
@@ -5331,7 +5305,7 @@ function closeStoryPicker() {
     if (createPanel && createPanel.style.display !== 'none') {
         hidePickerCreateForm();
     }
-    _quillPickerNewContent = null;
+    _tiptapPickerNewContent = null;
 }
 
 async function renderStoryPicker() {
@@ -5384,7 +5358,7 @@ function handlePickerStoryDragStart(e, storyId) {
 
 // ---- Create New Story in Picker ----
 
-let _quillPickerNewContent = null;
+let _tiptapPickerNewContent = null;
 
 function showPickerCreateForm() {
     document.getElementById('story-picker-browse').style.display = 'none';
@@ -5398,9 +5372,10 @@ function showPickerCreateForm() {
     document.getElementById('picker-new-tags').value = '';
     document.getElementById('picker-save-to-bank').checked = true;
 
-    // Init Quill for content
-    _quillPickerNewContent = initQuill('picker-new-content-editor', QUILL_FULL_TOOLBAR, 'Tell your story... (SAIL, STAR, or freeform)');
-    initResizeHandles();
+    // Init TipTap for content
+    if (window.storyEditor) {
+        _tiptapPickerNewContent = window.storyEditor.createStandaloneEditor('picker-new-content-editor');
+    }
 
     // Focus title
     requestAnimationFrame(() => document.getElementById('picker-new-title').focus());
@@ -5411,7 +5386,8 @@ function hidePickerCreateForm() {
     document.getElementById('story-picker-browse').style.display = 'flex';
     document.getElementById('story-picker-title').textContent = 'Add Stories to Stage';
     document.getElementById('picker-create-btn').style.display = '';
-    _quillPickerNewContent = null;
+    if (window.storyEditor) window.storyEditor.destroyStandaloneEditor(_tiptapPickerNewContent);
+    _tiptapPickerNewContent = null;
 }
 
 async function handlePickerCreateStory() {
@@ -5424,7 +5400,7 @@ async function handlePickerCreateStory() {
 
     const hook = document.getElementById('picker-new-hook').value.trim();
     const tags = document.getElementById('picker-new-tags').value.trim();
-    const content = _quillPickerNewContent ? _getQuillHtml(_quillPickerNewContent) : '';
+    const content = _tiptapPickerNewContent ? _tiptapPickerNewContent.getHTML() : '';
     const saveToBank = document.getElementById('picker-save-to-bank').checked;
     const company = (document.getElementById('picker-new-company')?.value || '').trim();
     const competency = (document.getElementById('picker-new-competency')?.value || '').trim();
@@ -5482,9 +5458,9 @@ async function autoSaveStoryForStage(storyId, html) {
                 titleEl.insertAdjacentHTML('beforeend', ' <span class="custom-badge">edited</span>');
             }
         }
-        if (window.storyEditor) window.storyEditor.showSaveStatus('Saved', 'saved');
+        if (window.storyEditor) window.storyEditor.showSaveStatus('prep', 'Saved', 'saved');
     } catch (e) {
-        if (window.storyEditor) window.storyEditor.showSaveStatus('Save failed', 'error');
+        if (window.storyEditor) window.storyEditor.showSaveStatus('prep', 'Save failed', 'error');
     }
 }
 
@@ -5497,7 +5473,7 @@ async function resetStoryToOriginal(storyId) {
         // Update the editor content in-place (no full re-render needed)
         if (window.storyEditor && story) {
             const originalHtml = contentToHtml(story.content || '');
-            window.storyEditor.setContent(storyId, originalHtml);
+            window.storyEditor.setContent('prep', storyId, originalHtml);
         }
         // Remove edited badge and reset button
         const card = document.querySelector(`.assigned-story-card[data-story-id="${storyId}"]`);
