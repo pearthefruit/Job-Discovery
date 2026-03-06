@@ -5258,6 +5258,19 @@ select.input option {
     margin-bottom: 0.5rem;
     flex-wrap: wrap;
     align-items: center;
+    transition: opacity 0.2s, max-height 0.25s, padding 0.25s, margin 0.25s, border-width 0.25s;
+    overflow: hidden;
+}
+
+/* Hidden toolbar — collapsed when no editor is focused */
+.story-toolbar-shared.story-toolbar-hidden {
+    opacity: 0;
+    max-height: 0;
+    padding-top: 0;
+    padding-bottom: 0;
+    margin-bottom: 0;
+    border-width: 0;
+    pointer-events: none;
 }
 
 .story-toolbar-shared button {
@@ -5288,6 +5301,43 @@ select.input option {
     height: 18px;
     background: var(--border-glass);
     margin: 0 0.2rem;
+}
+
+/* Color picker dropdown */
+.story-color-picker {
+    position: absolute;
+    top: 100%;
+    left: 50%;
+    transform: translateX(-50%);
+    margin-top: 6px;
+    display: grid;
+    grid-template-columns: repeat(5, 1fr);
+    gap: 4px;
+    padding: 6px;
+    background: rgba(20, 20, 30, 0.97);
+    backdrop-filter: blur(12px);
+    border: 1px solid var(--border-glass);
+    border-radius: var(--radius-sm);
+    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.5);
+    z-index: 20;
+}
+
+.story-color-picker .color-swatch {
+    width: 22px;
+    height: 22px;
+    border-radius: 50%;
+    border: 2px solid transparent;
+    cursor: pointer;
+    padding: 0;
+    transition: transform 0.15s, border-color 0.15s;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.story-color-picker .color-swatch:hover {
+    transform: scale(1.25);
+    border-color: rgba(255, 255, 255, 0.4);
 }
 
 /* Save indicator in toolbar */

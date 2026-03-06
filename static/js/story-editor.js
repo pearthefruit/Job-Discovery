@@ -13,6 +13,8 @@ import { Editor } from 'https://esm.sh/@tiptap/core@2.11.5';
 import StarterKit from 'https://esm.sh/@tiptap/starter-kit@2.11.5';
 import Underline from 'https://esm.sh/@tiptap/extension-underline@2.11.5';
 import Link from 'https://esm.sh/@tiptap/extension-link@2.11.5';
+import TextStyle from 'https://esm.sh/@tiptap/extension-text-style@2.11.5';
+import Color from 'https://esm.sh/@tiptap/extension-color@2.11.5';
 
 // Multi-group state — each group has independent editors, toolbar, and callbacks
 const groups = new Map();
@@ -48,13 +50,29 @@ const EDITOR_EXTENSIONS = [
         openOnClick: false,
         HTMLAttributes: { target: '_blank', rel: 'noopener' },
     }),
+    TextStyle,
+    Color,
+];
+
+// Color palette for the picker
+const COLOR_PALETTE = [
+    { color: null, label: 'Default', swatch: 'inherit' },
+    { color: '#ef4444', label: 'Red' },
+    { color: '#f97316', label: 'Orange' },
+    { color: '#eab308', label: 'Yellow' },
+    { color: '#22c55e', label: 'Green' },
+    { color: '#3b82f6', label: 'Blue' },
+    { color: '#8b5cf6', label: 'Purple' },
+    { color: '#ec4899', label: 'Pink' },
+    { color: '#ffffff', label: 'White' },
+    { color: '#94a3b8', label: 'Gray' },
 ];
 
 // =================== Shared Toolbar ===================
 
 function createToolbar(groupName) {
     const toolbar = document.createElement('div');
-    toolbar.className = 'story-editor-toolbar story-toolbar-shared';
+    toolbar.className = 'story-editor-toolbar story-toolbar-shared story-toolbar-hidden';
 
     const buttons = [
         { cmd: 'bold', label: 'B', title: 'Bold (Ctrl+B)', style: 'font-weight:bold' },
@@ -68,6 +86,7 @@ function createToolbar(groupName) {
         { cmd: 'orderedList', label: '1.', title: 'Numbered List' },
         null,
         { cmd: 'link', label: '\uD83D\uDD17', title: 'Insert/Edit Link' },
+        { cmd: 'color', label: 'A', title: 'Text Color', style: 'font-weight:bold;border-bottom:2px solid var(--accent)' },
     ];
 
     buttons.forEach(item => {
@@ -85,7 +104,11 @@ function createToolbar(groupName) {
         if (item.style) btn.setAttribute('style', item.style);
         btn.addEventListener('mousedown', (e) => {
             e.preventDefault();
-            runCommand(groupName, item.cmd);
+            if (item.cmd === 'color') {
+                toggleColorPicker(groupName, btn);
+            } else {
+                runCommand(groupName, item.cmd);
+            }
         });
         toolbar.appendChild(btn);
     });
@@ -97,6 +120,93 @@ function createToolbar(groupName) {
     toolbar.appendChild(indicator);
 
     return toolbar;
+}
+
+// =================== Color Picker ===================
+
+function toggleColorPicker(groupName, anchorBtn) {
+    const group = getGroup(groupName);
+    if (!group) return;
+
+    // Close existing picker
+    const existing = group.toolbarEl.querySelector('.story-color-picker');
+    if (existing) { existing.remove(); return; }
+
+    const picker = document.createElement('div');
+    picker.className = 'story-color-picker';
+
+    COLOR_PALETTE.forEach(({ color, label, swatch }) => {
+        const dot = document.createElement('button');
+        dot.type = 'button';
+        dot.className = 'color-swatch';
+        dot.title = label;
+        if (color) {
+            dot.style.background = color;
+        } else {
+            // "Default" swatch — slash-through to indicate reset
+            dot.style.background = 'transparent';
+            dot.style.border = '1px solid var(--text-muted)';
+            dot.innerHTML = '&times;';
+            dot.style.fontSize = '0.7rem';
+            dot.style.lineHeight = '1';
+            dot.style.color = 'var(--text-muted)';
+        }
+        dot.addEventListener('mousedown', (e) => {
+            e.preventDefault();
+            applyColor(groupName, color);
+            picker.remove();
+        });
+        picker.appendChild(dot);
+    });
+
+    // Position below the anchor button
+    anchorBtn.style.position = 'relative';
+    anchorBtn.appendChild(picker);
+
+    // Close picker on outside click
+    const closeHandler = (e) => {
+        if (!picker.contains(e.target) && e.target !== anchorBtn) {
+            picker.remove();
+            document.removeEventListener('mousedown', closeHandler);
+        }
+    };
+    setTimeout(() => document.addEventListener('mousedown', closeHandler), 0);
+}
+
+function applyColor(groupName, color) {
+    const group = getGroup(groupName);
+    if (!group || !group.activeEditor) return;
+    const chain = group.activeEditor.editor.chain().focus();
+    if (color) {
+        chain.setColor(color).run();
+    } else {
+        chain.unsetColor().run();
+    }
+    updateColorIndicator(groupName);
+}
+
+function updateColorIndicator(groupName) {
+    const group = getGroup(groupName);
+    if (!group || !group.toolbarEl) return;
+    const colorBtn = group.toolbarEl.querySelector('button[data-cmd="color"]');
+    if (!colorBtn) return;
+    const ed = group.activeEditor ? group.activeEditor.editor : null;
+    const currentColor = ed ? ed.getAttributes('textStyle').color : null;
+    colorBtn.style.borderBottomColor = currentColor || 'var(--accent)';
+}
+
+// =================== Toolbar Visibility ===================
+
+function showToolbar(groupName) {
+    const group = getGroup(groupName);
+    if (!group || !group.toolbarEl) return;
+    group.toolbarEl.classList.remove('story-toolbar-hidden');
+}
+
+function hideToolbar(groupName) {
+    const group = getGroup(groupName);
+    if (!group || !group.toolbarEl) return;
+    group.toolbarEl.classList.add('story-toolbar-hidden');
 }
 
 function runCommand(groupName, cmd) {
@@ -158,6 +268,7 @@ function updateToolbarState(groupName) {
         }
         btn.classList.toggle('is-active', active);
     });
+    updateColorIndicator(groupName);
 }
 
 function showSaveStatus(groupName, text, className) {
@@ -195,7 +306,9 @@ function _createEditor(groupName, id) {
         onFocus() {
             group.activeEditor = { id, editor };
             _activeGroupName = groupName;
+            showToolbar(groupName);
             updateToolbarState(groupName);
+            updateColorIndicator(groupName);
             // Remove editing highlight from all cards in this group
             const container = group.toolbarEl ? group.toolbarEl.parentNode : null;
             if (container) {
@@ -210,6 +323,12 @@ function _createEditor(groupName, id) {
                 if (group.activeEditor && group.activeEditor.id === id && !editor.isFocused) {
                     const card = wrapper.closest(group.cardSelector);
                     if (card) card.classList.remove('story-editing');
+                    // Hide toolbar if no editor in this group is focused
+                    const anyFocused = Object.values(group.editors).some(e => e.isFocused);
+                    if (!anyFocused) {
+                        group.activeEditor = null;
+                        hideToolbar(groupName);
+                    }
                 }
             }, 150);
         },
