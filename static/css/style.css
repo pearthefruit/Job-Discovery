@@ -2025,6 +2025,10 @@ select.input option {
 }
 
 /* =================== App Action Toolbar (Analyze/Export/Apply) =================== */
+.app-toolbar .split-btn-menu {
+    right: auto;
+    left: 0;
+}
 .app-toolbar {
     display: flex;
     gap: 0.5rem;
