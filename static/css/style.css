@@ -5459,6 +5459,18 @@ select.input option {
     margin-left: 0.4rem;
     vertical-align: middle;
 }
+.rework-model-badge.manual-version {
+    color: var(--success);
+    background: rgba(52, 211, 153, 0.12);
+}
+
+.btn-save-version {
+    color: var(--success) !important;
+    opacity: 0.7;
+}
+.btn-save-version:hover {
+    opacity: 1;
+}
 /* Rework History */
 .rework-history-toggle {
     font-size: 0.75rem;
@@ -5690,12 +5702,14 @@ select.input option {
 .assigned-story-actions .split-btn,
 .assigned-story-actions .rework-history-toggle,
 .assigned-story-actions .btn-save-bank,
+.assigned-story-actions .btn-save-version,
 .assigned-story-actions .story-reset-btn {
     display: none;
 }
 .assigned-story-card:hover .assigned-story-actions .split-btn,
 .assigned-story-card:hover .assigned-story-actions .rework-history-toggle,
 .assigned-story-card:hover .assigned-story-actions .btn-save-bank,
+.assigned-story-card:hover .assigned-story-actions .btn-save-version,
 .assigned-story-card:hover .assigned-story-actions .story-reset-btn {
     display: inline-flex;
 }

@@ -681,6 +681,30 @@ def delete_rework_entry(rework_id):
     return jsonify({"success": True})
 
 
+@interview_bp.route("/api/stories/<int:story_id>/save-version", methods=["POST"])
+def save_story_version(story_id):
+    """Manually save current story content as a version in rework history."""
+    data = request.get_json()
+    content_html = data.get('content_html', '').strip()
+    if not content_html:
+        return jsonify({"error": "No content provided"}), 400
+
+    label = data.get('label', '').strip() or 'User Edit'
+    target_role = data.get('target_role')
+    target_company = data.get('target_company')
+
+    history_id = db.add_rework_history(
+        story_id=story_id,
+        reworked_content=content_html,
+        model_used=label,
+        provider='Manual',
+        target_role=target_role or None,
+        target_company=target_company or None,
+    )
+
+    return jsonify({"history_id": history_id, "message": "Version saved"})
+
+
 def _sections_to_text(sections):
     """Convert resume sections to plain text for AI prompt."""
     lines = []

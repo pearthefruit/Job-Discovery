@@ -375,6 +375,13 @@ const api = {
     async deleteReworkHistory(reworkId) {
         return fetch(`/api/stories/rework-history/${reworkId}`, { method: 'DELETE' }).then(r => r.json());
     },
+    async saveStoryVersion(storyId, contentHtml, label, targetRole, targetCompany) {
+        return fetch(`/api/stories/${storyId}/save-version`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ content_html: contentHtml, label, target_role: targetRole, target_company: targetCompany }),
+        }).then(r => r.json());
+    },
     async importStories(text) {
         return fetch('/api/stories/import', {
             method: 'POST',
@@ -4328,7 +4335,42 @@ function renderReworkButtons(storyId, ctx = 'prep') {
             </div>
         </div>
         <button class="btn btn-ghost btn-sm rework-history-toggle" onclick="event.stopPropagation();handleReworkHistory(${storyId}, '${ctx}')">History</button>
+        <button class="btn btn-ghost btn-sm btn-save-version" onclick="event.stopPropagation();handleSaveVersion(${storyId}, '${ctx}')" title="Save current edit as a version">Save Version</button>
     `;
+}
+
+async function handleSaveVersion(storyId, ctx = 'prep') {
+    const html = window.storyEditor?.getHTML(ctx, storyId);
+    if (!html || html === '<p></p>') {
+        showToast('No content to save', 'error');
+        return;
+    }
+
+    const targetRole = expandedJobData?.title || null;
+    const targetCompany = expandedJobData?.company || null;
+
+    try {
+        const result = await api.saveStoryVersion(storyId, html, null, targetRole, targetCompany);
+        if (result.error) {
+            showToast(result.error, 'error');
+            return;
+        }
+        showToast('Version saved', 'success');
+
+        // Refresh history list if it's currently open
+        const rid = `${ctx}-${storyId}`;
+        const histList = document.getElementById(`rework-history-${rid}`);
+        if (histList && histList.style.display !== 'none') {
+            if (ctx === 'prep') {
+                handleReworkHistory(storyId, ctx);
+            } else {
+                toggleReworkHistory(storyId, ctx);
+                toggleReworkHistory(storyId, ctx);
+            }
+        }
+    } catch (err) {
+        showToast('Failed to save version: ' + err.message, 'error');
+    }
 }
 
 function renderReworkBody(storyId, ctx = 'prep') {
@@ -4573,7 +4615,7 @@ async function toggleReworkHistory(storyId, ctx = 'bank') {
             const timeAgo = formatTimeAgo(date);
             return `<div class="rework-history-item" data-rework-id="${h.id}">
                 <div class="rework-history-item-header">
-                    <span class="rework-model-badge">${h.provider || ''}/${h.model_used || 'unknown'}</span>
+                    <span class="rework-model-badge ${h.provider === 'Manual' ? 'manual-version' : ''}">${h.provider === 'Manual' ? (h.model_used || 'Your Edit') : `${h.provider || ''}/${h.model_used || 'unknown'}`}</span>
                     <span class="rework-history-time">${timeAgo}</span>
                     ${h.target_role ? `<span class="rework-history-role">${escapeHtml(h.target_role)}</span>` : ''}
                     <button class="btn-danger-hover rework-history-delete" onclick="event.stopPropagation(); deleteReworkHistoryItem(${storyId}, ${h.id}, '${ctx}')" title="Delete">&times;</button>
@@ -4615,11 +4657,12 @@ async function loadReworkFromHistory(storyId, reworkId, ctx = 'bank') {
                 }
                 // Update header: badge + model + Apply
                 const meta = card.querySelector('.insight-meta');
-                const modelBadge = `${entry.provider || ''}/${entry.model_used || 'unknown'}`;
+                const isManual = entry.provider === 'Manual';
+                const modelBadge = isManual ? (entry.model_used || 'Your Edit') : `${entry.provider || ''}/${entry.model_used || 'unknown'}`;
                 if (meta) {
                     meta.innerHTML = `
-                        <span class="insight-type-badge type-rework">REWORK</span>
-                        <span class="rework-model-badge">${escapeHtml(modelBadge)}</span>`;
+                        <span class="insight-type-badge type-rework">${isManual ? 'SAVED VERSION' : 'REWORK'}</span>
+                        <span class="rework-model-badge ${isManual ? 'manual-version' : ''}">${escapeHtml(modelBadge)}</span>`;
                 }
                 // Ensure Apply button exists in actions
                 const actions = card.querySelector('.insight-actions');
@@ -4645,7 +4688,10 @@ async function loadReworkFromHistory(storyId, reworkId, ctx = 'bank') {
             const html = typeof marked !== 'undefined' ? marked.parse(entry.reworked_content) : entry.reworked_content;
             contentEl.innerHTML = html;
             outputEl.style.display = 'block';
-            if (badge) badge.textContent = `${entry.provider || ''}/${entry.model_used || 'unknown'}`;
+            if (badge) {
+                badge.textContent = entry.provider === 'Manual' ? (entry.model_used || 'Your Edit') : `${entry.provider || ''}/${entry.model_used || 'unknown'}`;
+                badge.classList.toggle('manual-version', entry.provider === 'Manual');
+            }
         }
     } catch (e) {
         showToast('Failed to load rework', 'error');

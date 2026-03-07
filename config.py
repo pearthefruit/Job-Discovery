@@ -74,9 +74,8 @@ REQUEST_HEADERS = {
 # Job limits
 MAX_JOBS_PER_SOURCE = 25
 
-# Self-healing thresholds
+# Scraper thresholds
 EMPTY_JOB_THRESHOLD = 3
-SELECTOR_FAILURE_THRESHOLD = 5
 
 # Claude AI (interview prep + LLM fallback)
 CLAUDE_API_KEY = os.environ.get("CLAUDE_API_KEY", "")
