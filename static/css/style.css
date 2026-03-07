@@ -5384,6 +5384,95 @@ select.input option {
     background: rgba(108, 99, 255, 0.03);
 }
 
+/* =================== Story Rework (AI) =================== */
+.story-rework-section {
+    border-top: 1px solid var(--border-glass);
+    padding: 0.6rem 0.65rem;
+}
+
+.story-rework-actions {
+    display: flex;
+    gap: 0.5rem;
+    align-items: center;
+    flex-wrap: wrap;
+}
+
+.story-rework-actions .btn-accent {
+    background: linear-gradient(135deg, rgba(108, 99, 255, 0.15), rgba(168, 85, 247, 0.15));
+    border: 1px solid rgba(108, 99, 255, 0.3);
+    color: #c4b5fd;
+    display: flex;
+    align-items: center;
+    gap: 0.35rem;
+    white-space: nowrap;
+}
+.story-rework-actions .btn-accent:hover {
+    background: linear-gradient(135deg, rgba(108, 99, 255, 0.25), rgba(168, 85, 247, 0.25));
+    color: #ddd6fe;
+}
+.story-rework-actions .btn-accent:disabled {
+    opacity: 0.6;
+    cursor: wait;
+}
+
+.story-rework-output {
+    margin-top: 0.75rem;
+    border: 1px solid rgba(108, 99, 255, 0.2);
+    border-radius: var(--radius-sm);
+    background: rgba(108, 99, 255, 0.03);
+    overflow: hidden;
+}
+
+.rework-output-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 0.5rem 0.75rem;
+    background: rgba(108, 99, 255, 0.08);
+    border-bottom: 1px solid rgba(108, 99, 255, 0.15);
+}
+.rework-output-header h4 {
+    margin: 0;
+    font-size: 0.8rem;
+    font-weight: 600;
+    color: #c4b5fd;
+}
+.rework-output-actions {
+    display: flex;
+    gap: 0.35rem;
+}
+
+.rework-output-content {
+    padding: 0.75rem;
+    font-size: 0.85rem;
+    line-height: 1.7;
+    max-height: 500px;
+    overflow-y: auto;
+}
+.rework-output-content h3 {
+    font-size: 0.9rem;
+    font-weight: 600;
+    margin: 0.75rem 0 0.35rem;
+    color: #c4b5fd;
+}
+.rework-output-content h3:first-child {
+    margin-top: 0;
+}
+.rework-output-content p { margin-bottom: 0.4rem; }
+.rework-output-content ul, .rework-output-content ol { margin: 0.25rem 0; padding-left: 1.25rem; }
+.rework-output-content li { margin-bottom: 0.2rem; }
+
+/* Spinner for rework button loading state */
+.spinner-sm {
+    display: inline-block;
+    width: 14px;
+    height: 14px;
+    border: 2px solid rgba(255,255,255,0.2);
+    border-top-color: currentColor;
+    border-radius: 50%;
+    animation: spin 0.6s linear infinite;
+}
+
 /* Reset button in card actions */
 .story-reset-btn { opacity: 0.6; }
 .story-reset-btn:hover { opacity: 1; color: var(--danger) !important; }

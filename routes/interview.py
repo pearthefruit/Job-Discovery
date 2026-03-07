@@ -565,6 +565,62 @@ Generate a complete SAIL story based on the bullet point. Ask yourself what deta
     return jsonify({"generated_content": result})
 
 
+@interview_bp.route("/api/stories/<int:story_id>/rework", methods=["POST"])
+def rework_story(story_id):
+    """Rework a story to be more engaging using elite storytelling techniques."""
+    from ai.client import AIClient
+    from ai.prompts import REWORK_STORY_PROMPT
+
+    story = db.get_story(story_id)
+    if not story:
+        return jsonify({"error": "Story not found"}), 404
+
+    data = request.get_json(silent=True) or {}
+    target_role = data.get('target_role', '')
+    target_company = data.get('target_company', '')
+
+    prompt = REWORK_STORY_PROMPT + f"""
+
+### STORY TO REWORK
+**Title**: {story['title']}
+**Hook**: {story.get('hook', '') or 'None'}
+**Competencies**: {story.get('competency', '') or 'None'}
+
+**Content**:
+{story.get('content', '')}
+"""
+
+    if target_role or target_company:
+        prompt += f"""
+### TARGET ROLE CONTEXT (for future pacing)
+**Role**: {target_role or 'Not specified'}
+**Company**: {target_company or 'Not specified'}
+Use this context to add future pacing at the end of the story — help the interviewer envision the candidate applying these qualities in this specific role.
+"""
+
+    client = AIClient.from_config()
+
+    # Optional model override
+    model_override = data.get('model')
+    if model_override:
+        parts = model_override.split('/', 1)
+        if len(parts) == 2:
+            client.force_model(parts[0], parts[1])
+
+    try:
+        result = client.analyze_interview(prompt)
+    except Exception as e:
+        return jsonify({"error": f"Story rework failed: {e}"}), 500
+
+    _log_usage(client, 'story_rework')
+    return jsonify({
+        "reworked_content": result,
+        "story_id": story_id,
+        "model_used": client.last_model_used,
+        "provider": client.last_provider,
+    })
+
+
 def _sections_to_text(sections):
     """Convert resume sections to plain text for AI prompt."""
     lines = []

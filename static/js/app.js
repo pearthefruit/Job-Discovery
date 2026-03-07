@@ -355,6 +355,13 @@ const api = {
     async deleteStory(id) {
         return fetch(`/api/stories/${id}`, { method: 'DELETE' }).then(r => r.json());
     },
+    async reworkStory(id, data = {}) {
+        return fetch(`/api/stories/${id}/rework`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(data)
+        }).then(r => r.json());
+    },
     async importStories(text) {
         return fetch('/api/stories/import', {
             method: 'POST',
@@ -3811,6 +3818,26 @@ function renderStoryCard(story) {
                 </div>
             </div>
             <div class="story-tiptap-wrapper" id="story-bank-editor-${story.id}">${contentHtml}</div>
+            <div class="story-rework-section" onclick="event.stopPropagation()">
+                <div class="story-rework-actions">
+                    <button class="btn btn-accent btn-sm" id="rework-btn-${story.id}" onclick="handleReworkStory(${story.id})">
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"/></svg>
+                        Rework Story
+                    </button>
+                    <input type="text" class="input input-inline input-sm" id="rework-role-${story.id}" placeholder="Target role (optional, for future pacing)" style="flex:1; min-width:150px;">
+                    <input type="text" class="input input-inline input-sm" id="rework-company-${story.id}" placeholder="Target company (optional)" style="max-width:160px;">
+                </div>
+                <div class="story-rework-output" id="rework-output-${story.id}" style="display:none;">
+                    <div class="rework-output-header">
+                        <h4>Reworked Version</h4>
+                        <div class="rework-output-actions">
+                            <button class="btn btn-success btn-sm" onclick="applyReworkedStory(${story.id})">Apply</button>
+                            <button class="btn btn-ghost btn-sm" onclick="dismissRework(${story.id})">Dismiss</button>
+                        </div>
+                    </div>
+                    <div class="rework-output-content markdown-body" id="rework-content-${story.id}"></div>
+                </div>
+            </div>
         </div>
     </div>`;
 }
@@ -4158,6 +4185,89 @@ async function autoSaveStoryBankContent(storyId, html) {
     } catch (e) {
         if (window.storyEditor) window.storyEditor.showSaveStatus('bank', 'Save failed', 'error');
     }
+}
+
+// =================== Story Rework (AI) ===================
+
+async function handleReworkStory(storyId) {
+    const btn = document.getElementById(`rework-btn-${storyId}`);
+    const outputEl = document.getElementById(`rework-output-${storyId}`);
+    const contentEl = document.getElementById(`rework-content-${storyId}`);
+    const targetRole = document.getElementById(`rework-role-${storyId}`)?.value.trim() || '';
+    const targetCompany = document.getElementById(`rework-company-${storyId}`)?.value.trim() || '';
+
+    btn.disabled = true;
+    btn.innerHTML = '<span class="spinner-sm"></span> Reworking...';
+    outputEl.style.display = 'none';
+
+    try {
+        const result = await api.reworkStory(storyId, {
+            target_role: targetRole,
+            target_company: targetCompany,
+        });
+
+        if (result.error) {
+            showToast(result.error, 'error');
+            return;
+        }
+
+        // Render the reworked content as markdown
+        const html = typeof marked !== 'undefined' ? marked.parse(result.reworked_content) : result.reworked_content;
+        contentEl.innerHTML = html;
+        outputEl.style.display = 'block';
+
+        if (result.model_used) {
+            showToast(`Reworked with ${result.provider}/${result.model_used}`, 'success');
+        }
+    } catch (e) {
+        showToast('Rework failed: ' + e.message, 'error');
+    } finally {
+        btn.disabled = false;
+        btn.innerHTML = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"/></svg> Rework Story';
+    }
+}
+
+function applyReworkedStory(storyId) {
+    const contentEl = document.getElementById(`rework-content-${storyId}`);
+    if (!contentEl) return;
+
+    // Strip coaching notes section before applying
+    let html = contentEl.innerHTML;
+    const coachingIdx = html.indexOf('<h3>Coaching Notes</h3>');
+    if (coachingIdx !== -1) {
+        html = html.substring(0, coachingIdx).trim();
+    }
+    // Also try "### Coaching Notes" rendered as <h3>
+    const coachingIdx2 = html.indexOf('Coaching Notes');
+    if (coachingIdx2 !== -1) {
+        // Find the nearest preceding heading tag
+        const before = html.substring(0, coachingIdx2);
+        const lastH3 = before.lastIndexOf('<h3');
+        if (lastH3 !== -1) {
+            html = html.substring(0, lastH3).trim();
+        }
+    }
+
+    // Update the TipTap editor
+    if (window.storyEditor) {
+        window.storyEditor.setContent('bank', storyId, html);
+    }
+
+    // Also save to DB immediately
+    autoSaveStoryBankContent(storyId, html);
+
+    // Update cache
+    const story = _storiesCache.find(s => s.id === storyId);
+    if (story) story.content = html;
+
+    // Hide rework output
+    dismissRework(storyId);
+    showToast('Reworked story applied', 'success');
+}
+
+function dismissRework(storyId) {
+    const outputEl = document.getElementById(`rework-output-${storyId}`);
+    if (outputEl) outputEl.style.display = 'none';
 }
 
 // Story Builder
