@@ -376,11 +376,17 @@ const api = {
         return fetch(`/api/stories/rework-history/${reworkId}`, { method: 'DELETE' }).then(r => r.json());
     },
     async saveStoryVersion(storyId, contentHtml, label, targetRole, targetCompany) {
-        return fetch(`/api/stories/${storyId}/save-version`, {
+        const resp = await fetch(`/api/stories/${storyId}/save-version`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ content_html: contentHtml, label, target_role: targetRole, target_company: targetCompany }),
-        }).then(r => r.json());
+        });
+        if (!resp.ok) {
+            const text = await resp.text();
+            console.error('Save version failed:', resp.status, text.slice(0, 300));
+            return { error: `Server error ${resp.status}` };
+        }
+        return resp.json();
     },
     async importStories(text) {
         return fetch('/api/stories/import', {
@@ -4361,12 +4367,7 @@ async function handleSaveVersion(storyId, ctx = 'prep') {
         const rid = `${ctx}-${storyId}`;
         const histList = document.getElementById(`rework-history-${rid}`);
         if (histList && histList.style.display !== 'none') {
-            if (ctx === 'prep') {
-                handleReworkHistory(storyId, ctx);
-            } else {
-                toggleReworkHistory(storyId, ctx);
-                toggleReworkHistory(storyId, ctx);
-            }
+            toggleReworkHistory(storyId, ctx, true);
         }
     } catch (err) {
         showToast('Failed to save version: ' + err.message, 'error');
@@ -4592,11 +4593,11 @@ function renderReworkSection(storyId, ctx = 'bank') {
     </div>`;
 }
 
-async function toggleReworkHistory(storyId, ctx = 'bank') {
+async function toggleReworkHistory(storyId, ctx = 'bank', forceOpen = false) {
     const rid = `${ctx}-${storyId}`;
     const listEl = document.getElementById(`rework-history-${rid}`);
     if (!listEl) return;
-    if (listEl.style.display !== 'none') {
+    if (!forceOpen && listEl.style.display !== 'none') {
         listEl.style.display = 'none';
         return;
     }
@@ -4610,7 +4611,7 @@ async function toggleReworkHistory(storyId, ctx = 'bank') {
             return;
         }
         listEl.innerHTML = history.map(h => {
-            const preview = (h.reworked_content || '').replace(/[#*_\n]/g, ' ').substring(0, 120).trim();
+            const preview = (h.reworked_content || '').replace(/<[^>]+>/g, '').replace(/[#*_\n]/g, ' ').substring(0, 120).trim();
             const date = new Date(h.created_at + 'Z');
             const timeAgo = formatTimeAgo(date);
             return `<div class="rework-history-item" data-rework-id="${h.id}">

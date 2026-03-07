@@ -685,22 +685,25 @@ def delete_rework_entry(rework_id):
 def save_story_version(story_id):
     """Manually save current story content as a version in rework history."""
     data = request.get_json()
-    content_html = data.get('content_html', '').strip()
+    content_html = (data.get('content_html') or '').strip()
     if not content_html:
         return jsonify({"error": "No content provided"}), 400
 
-    label = data.get('label', '').strip() or 'User Edit'
+    label = (data.get('label') or '').strip() or 'User Edit'
     target_role = data.get('target_role')
     target_company = data.get('target_company')
 
-    history_id = db.add_rework_history(
-        story_id=story_id,
-        reworked_content=content_html,
-        model_used=label,
-        provider='Manual',
-        target_role=target_role or None,
-        target_company=target_company or None,
-    )
+    try:
+        history_id = db.add_rework_history(
+            story_id=story_id,
+            reworked_content=content_html,
+            model_used=label,
+            provider='Manual',
+            target_role=target_role or None,
+            target_company=target_company or None,
+        )
+    except Exception as e:
+        return jsonify({"error": f"Failed to save version: {e}"}), 500
 
     return jsonify({"history_id": history_id, "message": "Version saved"})
 
