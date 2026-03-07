@@ -5566,6 +5566,8 @@ select.input option {
 /* Reset button in card actions */
 .story-reset-btn { opacity: 0.6; }
 .story-reset-btn:hover { opacity: 1; color: var(--danger) !important; }
+.story-reset-btn.disabled { opacity: 0.15; cursor: default; }
+.story-reset-btn.disabled:hover { opacity: 0.15; color: inherit !important; }
 
 /* Custom content badge */
 .custom-badge {
@@ -5712,14 +5714,15 @@ select.input option {
     opacity: 1;
 }
 .assigned-story-actions {
-    display: none;
+    display: flex;
     flex-wrap: wrap;
     gap: 0.35rem;
     align-items: center;
     padding-top: 0.4rem;
+    visibility: hidden;
 }
 .assigned-story-card:hover .assigned-story-actions {
-    display: flex;
+    visibility: visible;
 }
 .assigned-story-actions .split-btn-menu {
     left: 0;

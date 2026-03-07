@@ -5916,9 +5916,9 @@ function renderAssignedStories() {
                     </div>
                     <div class="assigned-story-actions" onclick="event.stopPropagation()">
                         ${story.stage_only ? `<button class="btn btn-ghost btn-sm btn-save-bank" onclick="event.stopPropagation();handlePromoteToBank(${sid})" title="Save to Story Bank for other interviews">Save to Bank</button>` : ''}
-                        ${hasCustom ? `<button class="btn btn-ghost btn-sm story-reset-btn" onclick="event.stopPropagation();resetStoryToOriginal(${sid})" title="Reset to original">&#x21BA;</button>` : ''}
                         ${renderReworkButtons(sid, 'prep')}
                         <button class="btn btn-ghost btn-sm btn-save-version" onclick="event.stopPropagation();handleSaveVersion(${sid}, 'prep')" title="Save current edit as a version">Save Version</button>
+                        <button class="btn btn-ghost btn-sm story-reset-btn ${hasCustom ? '' : 'disabled'}" onclick="event.stopPropagation();${hasCustom ? `resetStoryToOriginal(${sid})` : `showToast('No edits to reset','info')`}" title="Reset to original">&#x21BA;</button>
                     </div>
                     <div class="assigned-story-body" id="story-body-${sid}">
                         <div>
@@ -6294,11 +6294,11 @@ async function autoSaveStoryForStage(storyId, html) {
             if (titleEl && !titleEl.querySelector('.custom-badge')) {
                 titleEl.insertAdjacentHTML('beforeend', ' <span class="custom-badge">edited</span>');
             }
-            // Add reset button if not already present
-            const actionsEl = card.querySelector('.assigned-story-actions');
-            if (actionsEl && !actionsEl.querySelector('.story-reset-btn')) {
-                actionsEl.insertAdjacentHTML('afterbegin',
-                    `<button class="btn btn-ghost btn-sm story-reset-btn" onclick="event.stopPropagation();resetStoryToOriginal(${storyId})" title="Reset to original">&#x21BA;</button>`);
+            // Enable reset button
+            const resetBtn = card.querySelector('.story-reset-btn');
+            if (resetBtn) {
+                resetBtn.classList.remove('disabled');
+                resetBtn.setAttribute('onclick', `event.stopPropagation();resetStoryToOriginal(${storyId})`);
             }
         }
         if (window.storyEditor) window.storyEditor.showSaveStatus('prep', 'Saved', 'saved');
@@ -6318,14 +6318,17 @@ async function resetStoryToOriginal(storyId) {
             const originalHtml = contentToHtml(story.content || '');
             window.storyEditor.setContent('prep', storyId, originalHtml);
         }
-        // Remove edited badge and reset button
+        // Remove edited badge and disable reset button
         const card = document.querySelector(`.assigned-story-card[data-story-id="${storyId}"]`);
         if (card) {
             card.classList.remove('has-custom-content');
             const badge = card.querySelector('.custom-badge');
             if (badge) badge.remove();
             const resetBtn = card.querySelector('.story-reset-btn');
-            if (resetBtn) resetBtn.remove();
+            if (resetBtn) {
+                resetBtn.classList.add('disabled');
+                resetBtn.setAttribute('onclick', `event.stopPropagation();showToast('No edits to reset','info')`);
+            }
         }
         showToast('Reset to original', 'success');
     } catch (e) {
