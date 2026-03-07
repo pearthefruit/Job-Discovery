@@ -5415,6 +5415,25 @@ select.input option {
     cursor: wait;
 }
 
+.rework-model-select {
+    max-width: 180px;
+    font-size: 0.75rem;
+    padding: 0.25rem 0.4rem;
+    background: rgba(255, 255, 255, 0.05);
+    border: 1px solid var(--border-glass);
+    border-radius: 4px;
+    color: var(--text-secondary);
+    cursor: pointer;
+}
+.rework-model-select:focus {
+    border-color: var(--accent);
+    outline: none;
+}
+.rework-model-select option {
+    background: #1a1a2e;
+    color: var(--text-primary);
+}
+
 .story-rework-output {
     margin-top: 0.75rem;
     border: 1px solid rgba(108, 99, 255, 0.2);

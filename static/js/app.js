@@ -3826,6 +3826,9 @@ function renderStoryCard(story) {
                     </button>
                     <input type="text" class="input input-inline input-sm" id="rework-role-${story.id}" placeholder="Target role (optional, for future pacing)" style="flex:1; min-width:150px;">
                     <input type="text" class="input input-inline input-sm" id="rework-company-${story.id}" placeholder="Target company (optional)" style="max-width:160px;">
+                    <select class="input input-inline input-sm rework-model-select" id="rework-model-${story.id}" onfocus="populateReworkModelSelect(this)">
+                        <option value="">Auto (rotation)</option>
+                    </select>
                 </div>
                 <div class="story-rework-output" id="rework-output-${story.id}" style="display:none;">
                     <div class="rework-output-header">
@@ -4189,12 +4192,46 @@ async function autoSaveStoryBankContent(storyId, html) {
 
 // =================== Story Rework (AI) ===================
 
+let _reworkModelsPopulated = false;
+async function populateReworkModelSelect(selectEl) {
+    if (_reworkModelsPopulated) return;
+    try {
+        const data = await api.getAIModels();
+        if (!data.models || !data.models.length) return;
+        // Build options grouped by provider
+        const grouped = {};
+        for (const m of data.models) {
+            if (!grouped[m.provider]) grouped[m.provider] = [];
+            grouped[m.provider].push(m);
+        }
+        let html = '<option value="">Auto (rotation)</option>';
+        for (const [provider, models] of Object.entries(grouped)) {
+            html += `<optgroup label="${provider}">`;
+            for (const m of models) {
+                html += `<option value="${m.provider}/${m.model}">${m.label}</option>`;
+            }
+            html += '</optgroup>';
+        }
+        // Apply to ALL rework model selects on the page
+        document.querySelectorAll('.rework-model-select').forEach(sel => {
+            const prev = sel.value;
+            sel.innerHTML = html;
+            sel.value = prev;
+        });
+        _reworkModelsPopulated = true;
+    } catch (e) {
+        console.warn('Failed to load AI models for rework:', e);
+    }
+}
+
 async function handleReworkStory(storyId) {
     const btn = document.getElementById(`rework-btn-${storyId}`);
     const outputEl = document.getElementById(`rework-output-${storyId}`);
     const contentEl = document.getElementById(`rework-content-${storyId}`);
     const targetRole = document.getElementById(`rework-role-${storyId}`)?.value.trim() || '';
     const targetCompany = document.getElementById(`rework-company-${storyId}`)?.value.trim() || '';
+    const modelSelect = document.getElementById(`rework-model-${storyId}`);
+    const selectedModel = modelSelect ? modelSelect.value : '';
 
     btn.disabled = true;
     btn.innerHTML = '<span class="spinner-sm"></span> Reworking...';
@@ -4204,6 +4241,7 @@ async function handleReworkStory(storyId) {
         const result = await api.reworkStory(storyId, {
             target_role: targetRole,
             target_company: targetCompany,
+            model: selectedModel || undefined,
         });
 
         if (result.error) {
