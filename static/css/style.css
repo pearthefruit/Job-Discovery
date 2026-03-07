@@ -1212,6 +1212,7 @@ select.input option {
 .status-select.status-offer         { background-color: rgba(52,211,153,0.2);  color: #4ade80; }
 .status-select.status-rejected      { background-color: rgba(248,113,113,0.12); color: var(--danger); }
 .status-select.status-ignored       { background-color: rgba(255,255,255,0.04); color: var(--text-muted); }
+.status-select.status-filtered      { background-color: rgba(251,191,36,0.12); color: #fbbf24; }
 
 .status-select option {
     background: var(--bg-secondary);
@@ -6779,4 +6780,56 @@ select.input option {
 .kanban-group-header .badge-count {
     font-size: 0.65rem;
     margin-left: 0.3rem;
+}
+
+/* =================== Paste Resume =================== */
+.resume-paste-area {
+    padding: 0 0.5rem;
+}
+
+.resume-paste-container {
+    background: var(--bg-glass);
+    border: 1px solid var(--border-glass);
+    border-radius: var(--radius);
+    padding: 1rem;
+    margin-bottom: 1rem;
+}
+
+.resume-paste-header {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    margin-bottom: 0.75rem;
+}
+
+.resume-paste-actions {
+    display: flex;
+    gap: 0.5rem;
+    flex-shrink: 0;
+}
+
+.resume-paste-container .story-tiptap-wrapper {
+    min-height: 200px;
+    border: 1px solid var(--border-glass);
+    border-radius: var(--radius-sm);
+    background: var(--bg-secondary);
+}
+
+.resume-paste-container .story-tiptap-wrapper .ProseMirror {
+    min-height: 200px;
+}
+
+.resume-paste-container .story-tiptap-wrapper .ProseMirror.ProseMirror-focused {
+    border-color: rgba(108, 99, 255, 0.3);
+}
+
+/* Paste resume in Application Prep selector */
+.resume-paste-inline {
+    margin-top: 1rem;
+    padding-top: 1rem;
+    border-top: 1px solid var(--border-glass);
+}
+
+.resume-paste-inline .resume-paste-container {
+    text-align: left;
 }

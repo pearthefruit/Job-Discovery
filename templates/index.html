@@ -341,8 +341,10 @@
                             <input type="file" id="resume-bank-file" accept=".docx" style="display:none;" onchange="this.closest('form').requestSubmit()">
                         </label>
                     </form>
+                    <button class="btn btn-ghost btn-sm" onclick="togglePasteResumeEditor()">Paste Resume</button>
                 </div>
             </div>
+            <div id="resume-paste-area" class="resume-paste-area" style="display:none;"></div>
             <div id="resume-bank-list" class="resume-bank-list">
                 <div class="empty-state">No resumes uploaded yet. Upload a .docx resume to get started.</div>
             </div>

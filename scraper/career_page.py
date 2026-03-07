@@ -22,7 +22,7 @@ from scraper.llm_extract import LLMExtractor
 import sys, os
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from config import (
-    REQUEST_TIMEOUT_SECONDS, USER_AGENT, EMPTY_JOB_THRESHOLD,
+    REQUEST_TIMEOUT_SECONDS, REQUEST_HEADERS, EMPTY_JOB_THRESHOLD,
     MAX_JOBS_PER_SOURCE, WORKDAY_PROBE_TIMEOUT_SECONDS,
 )
 
@@ -33,7 +33,7 @@ class CareerPageScraper:
         self.log = log
         self.selector_registry = SelectorRegistry(db)
         self.http = httpx.Client(
-            headers={"User-Agent": USER_AGENT},
+            headers=REQUEST_HEADERS,
             timeout=httpx.Timeout(REQUEST_TIMEOUT_SECONDS, connect=5.0),
             follow_redirects=True,
         )

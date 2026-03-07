@@ -73,6 +73,25 @@ def resume_detail(resume_id):
         return jsonify({"message": "Resume deleted"})
 
 
+@application_bp.route("/api/resumes/paste", methods=["POST"])
+def paste_resume():
+    """Create a resume from pasted HTML content."""
+    data = request.get_json()
+    name = data.get('name', '').strip() or 'Pasted Resume'
+    content_html = data.get('content_html', '').strip()
+    if not content_html:
+        return jsonify({"error": "No content provided"}), 400
+
+    resume_id = db.add_resume(name=name, content_html=content_html)
+    db.add_resume_section(
+        resume_id=resume_id,
+        section_type='full',
+        section_order=0,
+        content_html=content_html,
+    )
+    return jsonify({"id": resume_id, "sections": 1, "message": "Resume created"}), 201
+
+
 @application_bp.route("/api/resumes/upload", methods=["POST"])
 def upload_resume():
     """Upload a .docx resume, parse into sections, store in DB."""

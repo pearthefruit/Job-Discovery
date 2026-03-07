@@ -13,7 +13,7 @@ from urllib.parse import urlencode, urlparse, parse_qs
 
 import sys, os
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-from config import LINKEDIN_GUEST_API_BASE, USER_AGENT, REQUEST_TIMEOUT_SECONDS, MAX_JOBS_PER_SOURCE
+from config import LINKEDIN_GUEST_API_BASE, REQUEST_HEADERS, REQUEST_TIMEOUT_SECONDS, MAX_JOBS_PER_SOURCE
 
 
 class LinkedInScraper:
@@ -23,7 +23,7 @@ class LinkedInScraper:
     def __init__(self, log=None):
         self.log = log
         self.client = httpx.Client(
-            headers={"User-Agent": USER_AGENT},
+            headers=REQUEST_HEADERS,
             timeout=REQUEST_TIMEOUT_SECONDS,
             follow_redirects=True,
         )

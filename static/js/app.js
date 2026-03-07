@@ -264,6 +264,13 @@ const api = {
     async getResume(id) {
         return fetch(`/api/resumes/${id}`).then(r => r.json());
     },
+    async pasteResume(name, contentHtml) {
+        return fetch('/api/resumes/paste', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ name, content_html: contentHtml }),
+        }).then(r => r.json());
+    },
     async deleteResume(id) {
         return fetch(`/api/resumes/${id}`, { method: 'DELETE' }).then(r => r.json());
     },
@@ -3244,6 +3251,12 @@ function showResumeSelector(jobId, resumes) {
                     </button>
                 `).join('')}
             </div>
+            <div class="resume-paste-inline">
+                <button class="btn btn-ghost btn-sm" onclick="togglePasteResumeInSelector(${jobId})" id="btn-paste-in-selector">
+                    Or paste a resume
+                </button>
+                <div id="paste-resume-selector-area" style="display:none;"></div>
+            </div>
         </div>
     `;
     document.getElementById('ai-feedback-panel').innerHTML =
@@ -3289,6 +3302,12 @@ async function showSwitchResumeModal() {
                     </button>
                 `).join('')}
             </div>
+            <div class="resume-paste-inline">
+                <button class="btn btn-ghost btn-sm" onclick="togglePasteResumeInSwitchModal(${appId})" id="btn-paste-in-switch">
+                    Or paste a resume
+                </button>
+                <div id="paste-resume-switch-area" style="display:none;"></div>
+            </div>
             <button class="btn btn-ghost" onclick="closeSwitchResumeModal()" style="margin-top:0.75rem;">Cancel</button>
         </div>
     `;
@@ -3299,11 +3318,77 @@ async function showSwitchResumeModal() {
     requestAnimationFrame(() => overlay.classList.add('visible'));
 }
 
+let _pasteResumeSwitchEditor = null;
+
 function closeSwitchResumeModal() {
+    if (_pasteResumeSwitchEditor) {
+        window.storyEditor.destroyStandaloneEditor(_pasteResumeSwitchEditor);
+        _pasteResumeSwitchEditor = null;
+    }
     const overlay = document.querySelector('.switch-resume-overlay');
     if (overlay) {
         overlay.classList.remove('visible');
         setTimeout(() => overlay.remove(), 200);
+    }
+}
+
+function togglePasteResumeInSwitchModal(appId) {
+    const area = document.getElementById('paste-resume-switch-area');
+    if (!area) return;
+
+    if (area.style.display !== 'none') {
+        area.style.display = 'none';
+        area.innerHTML = '';
+        if (_pasteResumeSwitchEditor) {
+            window.storyEditor.destroyStandaloneEditor(_pasteResumeSwitchEditor);
+            _pasteResumeSwitchEditor = null;
+        }
+        document.getElementById('btn-paste-in-switch')?.style.removeProperty('display');
+        return;
+    }
+
+    area.style.display = 'block';
+    area.innerHTML = `
+        <div class="resume-paste-container" style="margin-top:0.75rem;">
+            <div class="resume-paste-header">
+                <input type="text" class="input input-sm" id="paste-resume-switch-name" placeholder="Resume name" style="flex:1;">
+                <div class="resume-paste-actions">
+                    <button class="btn btn-success btn-sm" onclick="savePastedResumeForSwitch(${appId})">Save &amp; Switch</button>
+                    <button class="btn btn-ghost btn-sm" onclick="togglePasteResumeInSwitchModal(${appId})">Cancel</button>
+                </div>
+            </div>
+            <div class="story-tiptap-wrapper" id="paste-resume-switch-editor" style="min-height:150px;"></div>
+        </div>
+    `;
+
+    _pasteResumeSwitchEditor = window.storyEditor.createStandaloneEditor('paste-resume-switch-editor');
+    if (_pasteResumeSwitchEditor) _pasteResumeSwitchEditor.commands.focus();
+    document.getElementById('btn-paste-in-switch')?.style.setProperty('display', 'none');
+}
+
+async function savePastedResumeForSwitch(appId) {
+    if (!_pasteResumeSwitchEditor) return;
+    const html = _pasteResumeSwitchEditor.getHTML();
+    const name = document.getElementById('paste-resume-switch-name')?.value.trim() || 'Pasted Resume';
+
+    if (!html || html === '<p></p>') {
+        showToast('Paste your resume content first', 'error');
+        return;
+    }
+
+    try {
+        const result = await api.pasteResume(name, html);
+        if (result.error) { showToast(result.error, 'error'); return; }
+        showToast('Resume saved — switching...', 'success');
+        closeSwitchResumeModal();
+        if (window.resumeEditor) window.resumeEditor.destroyEditors();
+        const switchResult = await api.switchResumeBase(appId, result.id);
+        if (switchResult.error) { showToast(switchResult.error, 'error'); return; }
+        logSystemEvent(expandedJobId, 'Resume base switched (pasted)');
+        showToast('Resume base switched', 'success');
+        await loadExpandedResumePhase(expandedJobId);
+    } catch (err) {
+        showToast('Failed: ' + err.message, 'error');
     }
 }
 
@@ -4899,6 +4984,146 @@ async function handleDeleteResume(id) {
     showToast('Resume deleted', 'success');
     const resumes = await api.getResumes();
     renderResumeBank(resumes);
+}
+
+// =================== Paste Resume ===================
+
+let _pasteResumeEditor = null;
+
+function togglePasteResumeEditor() {
+    const area = document.getElementById('resume-paste-area');
+    if (!area) return;
+
+    if (area.style.display !== 'none') {
+        // Close
+        closePasteResumeEditor();
+        return;
+    }
+
+    area.style.display = 'block';
+    area.innerHTML = `
+        <div class="resume-paste-container">
+            <div class="resume-paste-header">
+                <input type="text" class="input input-sm" id="paste-resume-name" placeholder="Resume name (e.g. Product Manager 2026)" style="flex:1;">
+                <div class="resume-paste-actions">
+                    <button class="btn btn-success btn-sm" onclick="savePastedResume()">Save Resume</button>
+                    <button class="btn btn-ghost btn-sm" onclick="closePasteResumeEditor()">Cancel</button>
+                </div>
+            </div>
+            <div class="story-tiptap-wrapper" id="paste-resume-editor" style="min-height:200px;"></div>
+        </div>
+    `;
+
+    _pasteResumeEditor = window.storyEditor.createStandaloneEditor('paste-resume-editor');
+    if (_pasteResumeEditor) {
+        _pasteResumeEditor.commands.focus();
+    }
+}
+
+function closePasteResumeEditor() {
+    const area = document.getElementById('resume-paste-area');
+    if (area) {
+        area.style.display = 'none';
+        area.innerHTML = '';
+    }
+    if (_pasteResumeEditor) {
+        window.storyEditor.destroyStandaloneEditor(_pasteResumeEditor);
+        _pasteResumeEditor = null;
+    }
+}
+
+async function savePastedResume() {
+    if (!_pasteResumeEditor) return;
+    const html = _pasteResumeEditor.getHTML();
+    const name = document.getElementById('paste-resume-name')?.value.trim() || 'Pasted Resume';
+
+    if (!html || html === '<p></p>') {
+        showToast('Paste your resume content first', 'error');
+        return;
+    }
+
+    try {
+        const result = await api.pasteResume(name, html);
+        if (result.error) {
+            showToast(result.error, 'error');
+            return;
+        }
+        showToast('Resume saved', 'success');
+        closePasteResumeEditor();
+        const resumes = await api.getResumes();
+        renderResumeBank(resumes);
+    } catch (err) {
+        showToast('Failed to save resume: ' + err.message, 'error');
+    }
+}
+
+// =================== Paste Resume in Application Prep ===================
+
+let _pasteResumeAppEditor = null;
+
+function togglePasteResumeInSelector(jobId) {
+    const area = document.getElementById('paste-resume-selector-area');
+    if (!area) return;
+
+    if (area.style.display !== 'none') {
+        closePasteResumeInSelector();
+        return;
+    }
+
+    area.style.display = 'block';
+    area.innerHTML = `
+        <div class="resume-paste-container" style="margin-top:0.75rem;">
+            <div class="resume-paste-header">
+                <input type="text" class="input input-sm" id="paste-resume-app-name" placeholder="Resume name (e.g. Product Manager 2026)" style="flex:1;">
+                <div class="resume-paste-actions">
+                    <button class="btn btn-success btn-sm" onclick="savePastedResumeForApp(${jobId})">Save &amp; Use</button>
+                    <button class="btn btn-ghost btn-sm" onclick="closePasteResumeInSelector()">Cancel</button>
+                </div>
+            </div>
+            <div class="story-tiptap-wrapper" id="paste-resume-app-editor" style="min-height:200px;"></div>
+        </div>
+    `;
+
+    _pasteResumeAppEditor = window.storyEditor.createStandaloneEditor('paste-resume-app-editor');
+    if (_pasteResumeAppEditor) _pasteResumeAppEditor.commands.focus();
+    document.getElementById('btn-paste-in-selector')?.style.setProperty('display', 'none');
+}
+
+function closePasteResumeInSelector() {
+    const area = document.getElementById('paste-resume-selector-area');
+    if (area) {
+        area.style.display = 'none';
+        area.innerHTML = '';
+    }
+    if (_pasteResumeAppEditor) {
+        window.storyEditor.destroyStandaloneEditor(_pasteResumeAppEditor);
+        _pasteResumeAppEditor = null;
+    }
+    document.getElementById('btn-paste-in-selector')?.style.removeProperty('display');
+}
+
+async function savePastedResumeForApp(jobId) {
+    if (!_pasteResumeAppEditor) return;
+    const html = _pasteResumeAppEditor.getHTML();
+    const name = document.getElementById('paste-resume-app-name')?.value.trim() || 'Pasted Resume';
+
+    if (!html || html === '<p></p>') {
+        showToast('Paste your resume content first', 'error');
+        return;
+    }
+
+    try {
+        const result = await api.pasteResume(name, html);
+        if (result.error) {
+            showToast(result.error, 'error');
+            return;
+        }
+        showToast('Resume saved — creating application...', 'success');
+        closePasteResumeInSelector();
+        createApplicationWithResume(jobId, result.id);
+    } catch (err) {
+        showToast('Failed to save resume: ' + err.message, 'error');
+    }
 }
 
 // =================== Activity Sidebar ===================

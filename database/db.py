@@ -443,13 +443,13 @@ class JobDiscoveryDB:
 
     def is_scraper_running(self):
         with self.get_connection() as conn:
-            # Auto-expire runs stuck as "running" for more than 10 minutes
+            # Auto-expire runs stuck as "running" for more than 5 minutes
             conn.execute(
                 """UPDATE scrape_runs SET status = 'failed',
                    finished_at = CURRENT_TIMESTAMP,
-                   errors = 'Auto-expired: stuck for >10 minutes'
+                   errors = 'Auto-expired: stuck for >5 minutes'
                    WHERE status = 'running'
-                   AND started_at < datetime('now', '-10 minutes')"""
+                   AND started_at < datetime('now', '-5 minutes')"""
             )
             row = conn.execute(
                 "SELECT COUNT(*) as cnt FROM scrape_runs WHERE status = 'running'"
