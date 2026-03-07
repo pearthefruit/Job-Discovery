@@ -5607,11 +5607,15 @@ select.input option {
     gap: 0.75rem;
     padding: 0.6rem 0.75rem;
     position: relative;
+    z-index: 0;
     background: var(--bg-glass);
     border: 1px solid var(--border-glass);
     border-radius: var(--radius-sm);
     cursor: grab;
     transition: border-color var(--transition), background var(--transition);
+}
+.assigned-story-card:has(.split-btn-menu.open) {
+    z-index: 10;
 }
 
 .assigned-story-card:hover {
@@ -5690,28 +5694,36 @@ select.input option {
     overflow: visible;
 }
 
-.assigned-story-actions {
-    position: absolute;
-    top: 0.5rem;
-    right: 0.5rem;
+.assigned-story-title-row {
     display: flex;
-    flex-direction: row;
+    align-items: flex-start;
+    gap: 0.5rem;
+}
+.assigned-story-title-row h4 {
+    flex: 1;
+    min-width: 0;
+}
+.assigned-story-remove {
+    flex-shrink: 0;
+    opacity: 0;
+    transition: opacity 0.15s ease;
+}
+.assigned-story-card:hover .assigned-story-remove {
+    opacity: 1;
+}
+.assigned-story-actions {
+    display: none;
+    flex-wrap: wrap;
     gap: 0.35rem;
     align-items: center;
+    padding-top: 0.4rem;
 }
-.assigned-story-actions .split-btn,
-.assigned-story-actions .rework-history-toggle,
-.assigned-story-actions .btn-save-bank,
-.assigned-story-actions .btn-save-version,
-.assigned-story-actions .story-reset-btn {
-    display: none;
+.assigned-story-card:hover .assigned-story-actions {
+    display: flex;
 }
-.assigned-story-card:hover .assigned-story-actions .split-btn,
-.assigned-story-card:hover .assigned-story-actions .rework-history-toggle,
-.assigned-story-card:hover .assigned-story-actions .btn-save-bank,
-.assigned-story-card:hover .assigned-story-actions .btn-save-version,
-.assigned-story-card:hover .assigned-story-actions .story-reset-btn {
-    display: inline-flex;
+.assigned-story-actions .split-btn-menu {
+    left: 0;
+    right: auto;
 }
 
 .btn-save-bank {

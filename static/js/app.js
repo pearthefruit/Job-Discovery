@@ -4341,7 +4341,6 @@ function renderReworkButtons(storyId, ctx = 'prep') {
             </div>
         </div>
         <button class="btn btn-ghost btn-sm rework-history-toggle" onclick="event.stopPropagation();handleReworkHistory(${storyId}, '${ctx}')">History</button>
-        <button class="btn btn-ghost btn-sm btn-save-version" onclick="event.stopPropagation();handleSaveVersion(${storyId}, '${ctx}')" title="Save current edit as a version">Save Version</button>
     `;
 }
 
@@ -4611,7 +4610,8 @@ async function toggleReworkHistory(storyId, ctx = 'bank', forceOpen = false) {
             return;
         }
         listEl.innerHTML = history.map(h => {
-            const preview = (h.reworked_content || '').replace(/<[^>]+>/g, '').replace(/[#*_\n]/g, ' ').substring(0, 120).trim();
+            const rawText = (h.reworked_content || '').replace(/<[^>]+>/g, '').replace(/[#*_\n]/g, ' ');
+            const preview = (new DOMParser().parseFromString(rawText, 'text/html').body.textContent || '').substring(0, 120).trim();
             const date = new Date(h.created_at + 'Z');
             const timeAgo = formatTimeAgo(date);
             return `<div class="rework-history-item" data-rework-id="${h.id}">
@@ -5902,26 +5902,29 @@ function renderAssignedStories() {
                 <span class="assigned-story-drag-handle" title="Drag to reorder">&#x2630;</span>
                 <div class="assigned-story-info">
                     <div class="assigned-story-header" onclick="toggleAssignedStoryContent(${sid})" style="cursor:pointer;">
-                        <h4>
-                            <span class="story-expand-chevron" id="story-chevron-${sid}">&#x25B8;</span>
-                            ${escapeHtml(story.title)}${hasCustom ? ' <span class="custom-badge">edited</span>' : ''}
-                        </h4>
+                        <div class="assigned-story-title-row">
+                            <h4>
+                                <span class="story-expand-chevron" id="story-chevron-${sid}">&#x25B8;</span>
+                                ${escapeHtml(story.title)}${hasCustom ? ' <span class="custom-badge">edited</span>' : ''}
+                            </h4>
+                            <button class="btn btn-ghost btn-sm btn-danger-hover assigned-story-remove" onclick="event.stopPropagation();handleRemoveStoryFromStage(${sid})" title="Remove">&times;</button>
+                        </div>
                         ${story.hook ? `<p class="story-hook-text">${escapeHtml(story.hook)}</p>` : ''}
                         ${story.tags ? `<div class="story-tags" style="margin-top:0.15rem;">${story.tags.split(',').map(t =>
                             `<span class="filter-chip chip-sm">${escapeHtml(t.trim())}</span>`
                         ).join('')}</div>` : ''}
+                    </div>
+                    <div class="assigned-story-actions" onclick="event.stopPropagation()">
+                        ${story.stage_only ? `<button class="btn btn-ghost btn-sm btn-save-bank" onclick="event.stopPropagation();handlePromoteToBank(${sid})" title="Save to Story Bank for other interviews">Save to Bank</button>` : ''}
+                        ${hasCustom ? `<button class="btn btn-ghost btn-sm story-reset-btn" onclick="event.stopPropagation();resetStoryToOriginal(${sid})" title="Reset to original">&#x21BA;</button>` : ''}
+                        ${renderReworkButtons(sid, 'prep')}
+                        <button class="btn btn-ghost btn-sm btn-save-version" onclick="event.stopPropagation();handleSaveVersion(${sid}, 'prep')" title="Save current edit as a version">Save Version</button>
                     </div>
                     <div class="assigned-story-body" id="story-body-${sid}">
                         <div>
                             <div class="story-tiptap-wrapper" id="story-editor-${sid}">${contentToHtml(story.custom_content || story.content || '') || '<em>No content</em>'}</div>
                         </div>
                     </div>
-                </div>
-                <div class="assigned-story-actions" onclick="event.stopPropagation()">
-                    ${story.stage_only ? `<button class="btn btn-ghost btn-sm btn-save-bank" onclick="event.stopPropagation();handlePromoteToBank(${sid})" title="Save to Story Bank for other interviews">Save to Bank</button>` : ''}
-                    ${hasCustom ? `<button class="btn btn-ghost btn-sm story-reset-btn" onclick="event.stopPropagation();resetStoryToOriginal(${sid})" title="Reset to original">&#x21BA;</button>` : ''}
-                    ${renderReworkButtons(sid, 'prep')}
-                    <button class="btn btn-ghost btn-sm btn-danger-hover" onclick="event.stopPropagation();handleRemoveStoryFromStage(${sid})" title="Remove">&times;</button>
                 </div>
             </div>
         `;
@@ -6290,6 +6293,12 @@ async function autoSaveStoryForStage(storyId, html) {
             const titleEl = card.querySelector('h4');
             if (titleEl && !titleEl.querySelector('.custom-badge')) {
                 titleEl.insertAdjacentHTML('beforeend', ' <span class="custom-badge">edited</span>');
+            }
+            // Add reset button if not already present
+            const actionsEl = card.querySelector('.assigned-story-actions');
+            if (actionsEl && !actionsEl.querySelector('.story-reset-btn')) {
+                actionsEl.insertAdjacentHTML('afterbegin',
+                    `<button class="btn btn-ghost btn-sm story-reset-btn" onclick="event.stopPropagation();resetStoryToOriginal(${storyId})" title="Reset to original">&#x21BA;</button>`);
             }
         }
         if (window.storyEditor) window.storyEditor.showSaveStatus('prep', 'Saved', 'saved');
