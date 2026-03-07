@@ -12,6 +12,9 @@ import httpx
 
 log = logging.getLogger(__name__)
 
+# Module-level diversity index — persists across AIClient instances
+_diversity_index = 0
+
 GEMINI_URL = "https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent"
 CLAUDE_URL = "https://api.anthropic.com/v1/messages"
 
@@ -20,6 +23,7 @@ OPENAI_COMPAT_URLS = {
     'mistral': "https://api.mistral.ai/v1/chat/completions",
     'cerebras': "https://api.cerebras.ai/v1/chat/completions",
     'openrouter': "https://openrouter.ai/api/v1/chat/completions",
+    'groq': "https://api.groq.com/openai/v1/chat/completions",
 }
 
 TIMEOUT = 120  # seconds - analysis prompts generate long responses
@@ -44,6 +48,7 @@ class AIClient:
         self.last_key_hint = None
         self.last_usage = {}
         self._forced_model = None
+        self._diversity_index = 0
 
     def _call_gemini(self, key, model, prompt, temperature=0.3, max_tokens=65536):
         """Single Gemini API call. Returns text or raises."""
@@ -249,6 +254,60 @@ class AIClient:
         }
         return content[0].get("text", "")
 
+    def analyze_with_diversity(self, prompt, temperature=0.3, max_tokens=65536):
+        """Round-robin across ALL available models for variety.
+
+        Builds a flat list of (provider, model) tuples, starts at
+        _diversity_index, advances it after each call. Falls back to
+        next model on failure.
+        """
+        # Build ordered model list: gemini models first, then fallbacks
+        all_models = []
+        for model in self.gemini_models:
+            all_models.append(('gemini', model))
+        for provider, api_key, models in self.fallback_providers:
+            for model in models:
+                all_models.append((provider, model))
+
+        if not all_models:
+            return self.analyze_with_rotation(prompt, temperature, max_tokens)
+
+        global _diversity_index
+        start = _diversity_index % len(all_models)
+        _diversity_index = (start + 1) % len(all_models)
+        errors = []
+
+        # Try from start index, wrapping around
+        for i in range(len(all_models)):
+            idx = (start + i) % len(all_models)
+            provider, model = all_models[idx]
+            try:
+                log.info(f"Diversity rotation: trying {provider}/{model}")
+                if provider == 'gemini':
+                    for key in self.gemini_keys:
+                        try:
+                            return self._call_gemini(key, model, prompt, temperature, max_tokens)
+                        except RateLimitError:
+                            errors.append(f"{model}/...{key[-4:]}: rate limited")
+                            continue
+                    errors.append(f"{model}: all keys exhausted")
+                else:
+                    api_key = next((k for p, k, _ in self.fallback_providers if p == provider), None)
+                    if api_key:
+                        return self._call_openai_compat(provider, api_key, model, prompt, temperature, max_tokens)
+            except Exception as e:
+                errors.append(f"{provider}/{model}: {e}")
+                continue
+
+        # Last resort: Claude
+        if self.claude_api_key:
+            try:
+                return self.analyze_claude(prompt, temperature, max_tokens)
+            except Exception as e:
+                errors.append(f"claude: {e}")
+
+        raise RuntimeError(f"All models failed: {'; '.join(errors)}")
+
     # Convenience aliases (backward compat)
     def analyze_resume(self, prompt):
         if self._forced_model:
@@ -285,8 +344,15 @@ class AIClient:
                     return self._call_openai_compat(provider, api_key, model, prompt, temperature, max_tokens)
             raise ValueError(f"Unknown provider: {provider}")
 
-    def analyze_interview(self, prompt):
-        return self.analyze_with_rotation(prompt)
+    def analyze_interview(self, prompt, max_tokens=65536):
+        if self._forced_model:
+            try:
+                return self._call_forced(prompt, max_tokens=max_tokens)
+            except Exception as e:
+                log.warning(f"Forced model {self._forced_model} failed: {e}, falling back to rotation")
+                # Don't clear _forced_model between passes — caller may retry
+                raise RuntimeError(f"Selected model {self._forced_model[0]}/{self._forced_model[1]} failed: {e}")
+        return self.analyze_with_rotation(prompt, max_tokens=max_tokens)
 
     @classmethod
     def from_config(cls):
@@ -296,6 +362,7 @@ class AIClient:
             CLAUDE_API_KEY, CLAUDE_MODEL,
             MISTRAL_API_KEY, MISTRAL_MODELS,
             CEREBRAS_API_KEY, CEREBRAS_MODELS,
+            GROQ_API_KEY, GROQ_MODELS,
             OPENROUTER_API_KEY, OPENROUTER_MODELS,
         )
         # Build fallback provider list (skip unconfigured providers)
@@ -304,6 +371,8 @@ class AIClient:
             fallbacks.append(('mistral', MISTRAL_API_KEY, MISTRAL_MODELS))
         if CEREBRAS_API_KEY and CEREBRAS_MODELS:
             fallbacks.append(('cerebras', CEREBRAS_API_KEY, CEREBRAS_MODELS))
+        if GROQ_API_KEY and GROQ_MODELS:
+            fallbacks.append(('groq', GROQ_API_KEY, GROQ_MODELS))
         if OPENROUTER_API_KEY and OPENROUTER_MODELS:
             fallbacks.append(('openrouter', OPENROUTER_API_KEY, OPENROUTER_MODELS))
 

@@ -2033,53 +2033,65 @@ select.input option {
     align-items: center;
 }
 
-.analyze-split-btn {
-    display: flex;
+/* =================== Split Button (reusable) =================== */
+.split-btn {
+    display: inline-flex;
     position: relative;
 }
-.analyze-split-btn .btn-primary:first-child {
-    border-radius: var(--radius-sm) 0 0 var(--radius-sm);
+.split-btn .split-btn-main {
+    border-top-right-radius: 0 !important;
+    border-bottom-right-radius: 0 !important;
 }
-.analyze-toggle {
-    border-radius: 0 var(--radius-sm) var(--radius-sm) 0 !important;
-    padding: 0.35rem 0.4rem !important;
-    border-left: 1px solid rgba(255,255,255,0.15) !important;
+.split-btn .split-btn-caret {
+    border-top-left-radius: 0 !important;
+    border-bottom-left-radius: 0 !important;
+    padding: 0.25rem 0.4rem !important;
     min-width: unset;
     font-size: 0.65rem;
+    border-left: 1px solid rgba(255,255,255,0.15) !important;
 }
-.model-menu {
+.split-btn-menu {
     display: none;
     position: absolute;
     top: 100%;
-    left: 0;
+    right: 0;
     margin-top: 4px;
     background: var(--bg-card);
     border: 1px solid var(--border-glass);
     border-radius: var(--radius-sm);
     padding: 0.4rem 0;
-    min-width: 220px;
+    min-width: 200px;
     z-index: 100;
     max-height: 320px;
     overflow-y: auto;
+    box-shadow: 0 4px 16px rgba(0,0,0,0.4);
 }
-.model-menu.open { display: block; }
-.model-menu-header {
+.split-btn-menu.open { display: block; }
+.split-btn-menu-header {
     padding: 0.3rem 0.75rem;
     font-size: 0.7rem;
     color: var(--text-muted);
     text-transform: uppercase;
     letter-spacing: 0.05em;
 }
-.model-option {
+.split-btn-option {
     display: block;
     padding: 0.3rem 0.75rem;
     font-size: 0.8rem;
     cursor: pointer;
     white-space: nowrap;
+    background: none;
+    border: none;
+    color: var(--text-secondary);
+    width: 100%;
+    text-align: left;
 }
-.model-option:hover { background: rgba(255,255,255,0.05); }
-.model-option input { margin-right: 0.4rem; }
-.model-optgroup {
+.split-btn-option:hover {
+    background: rgba(255,255,255,0.05);
+    color: var(--text-primary);
+}
+.split-btn-option input[type="radio"] { margin-right: 0.4rem; }
+.split-btn-optgroup {
     padding: 0.25rem 0.75rem 0.1rem;
     font-size: 0.65rem;
     color: var(--text-muted);
@@ -3102,8 +3114,6 @@ select.input option {
     display: flex;
     flex-direction: column;
     gap: 1rem;
-    max-height: 80vh;
-    overflow-y: auto;
 }
 
 .interview-coach-panel h2 {
@@ -3118,55 +3128,7 @@ select.input option {
     flex-wrap: wrap;
 }
 
-/* Prep Guide split button */
-.prep-guide-split-btn {
-    display: inline-flex;
-    position: relative;
-}
-
-.prep-guide-split-btn .prep-guide-main {
-    border-top-right-radius: 0;
-    border-bottom-right-radius: 0;
-    border-right: none;
-}
-
-.prep-guide-split-btn .prep-guide-caret {
-    border-top-left-radius: 0;
-    border-bottom-left-radius: 0;
-    padding: 0.25rem 0.35rem;
-    min-width: unset;
-    font-size: 0.65rem;
-}
-
-.prep-guide-dropdown {
-    position: absolute;
-    top: 100%;
-    right: 0;
-    margin-top: 4px;
-    flex-direction: column;
-    background: var(--bg-card);
-    border: 1px solid var(--border-glass);
-    border-radius: var(--radius-sm);
-    z-index: 100;
-    min-width: 120px;
-    box-shadow: 0 4px 16px rgba(0,0,0,0.4);
-}
-
-.prep-guide-option {
-    background: none;
-    border: none;
-    color: var(--text-secondary);
-    padding: 0.4rem 0.75rem;
-    text-align: left;
-    font-size: 0.78rem;
-    cursor: pointer;
-    transition: background 0.1s;
-}
-
-.prep-guide-option:hover {
-    background: var(--bg-glass);
-    color: var(--text-primary);
-}
+/* Prep Guide uses generic .split-btn */
 
 /* Stories header actions */
 .stories-header-actions {
@@ -3394,6 +3356,40 @@ select.input option {
 
 .loading-insight .insight-body {
     display: block;
+}
+
+/* Rework insight card in coach panel */
+.rework-align-spacer {
+    flex-shrink: 0;
+}
+.rework-insight-card {
+    border-color: rgba(108, 99, 255, 0.3);
+}
+.rework-insight-card .rework-output-content {
+    max-height: none;
+}
+.insight-type-badge.type-rework {
+    background: rgba(108, 99, 255, 0.15);
+    color: #c4b5fd;
+}
+.rework-insight-story-ref {
+    font-size: 0.75rem;
+    color: var(--text-secondary);
+    margin-bottom: 0.5rem;
+    font-style: italic;
+}
+.rework-insight-card .insight-actions .btn-icon {
+    opacity: 1;
+}
+.rework-insight-card .insight-actions .btn-success {
+    padding: 0.2rem 0.5rem;
+    font-size: 0.7rem;
+}
+
+/* Highlight source story while reworking */
+.assigned-story-card.rework-active {
+    border-color: rgba(108, 99, 255, 0.5);
+    box-shadow: 0 0 8px rgba(108, 99, 255, 0.15);
 }
 
 .auto-assign-btn {
@@ -5415,23 +5411,10 @@ select.input option {
     cursor: wait;
 }
 
-.rework-model-select {
-    max-width: 180px;
-    font-size: 0.75rem;
-    padding: 0.25rem 0.4rem;
-    background: rgba(255, 255, 255, 0.05);
-    border: 1px solid var(--border-glass);
-    border-radius: 4px;
-    color: var(--text-secondary);
-    cursor: pointer;
-}
-.rework-model-select:focus {
-    border-color: var(--accent);
-    outline: none;
-}
-.rework-model-select option {
-    background: #1a1a2e;
-    color: var(--text-primary);
+/* Rework model uses generic .split-btn + .split-btn-menu */
+.story-rework-section .split-btn-menu {
+    left: 0;
+    right: auto;
 }
 
 .story-rework-output {
@@ -5459,6 +5442,77 @@ select.input option {
 .rework-output-actions {
     display: flex;
     gap: 0.35rem;
+}
+
+.rework-model-badge {
+    font-size: 0.65rem;
+    font-weight: 500;
+    color: #c4b5fd;
+    background: rgba(108, 99, 255, 0.15);
+    padding: 0.15rem 0.5rem;
+    border-radius: 3px;
+    margin-left: 0.4rem;
+    vertical-align: middle;
+}
+/* Rework History */
+.rework-history-toggle {
+    font-size: 0.75rem;
+    opacity: 0.7;
+}
+.rework-history-list {
+    border: 1px solid var(--border-glass);
+    border-radius: var(--radius-sm);
+    margin-top: 0.5rem;
+    max-height: 300px;
+    overflow-y: auto;
+}
+.rework-history-loading,
+.rework-history-empty {
+    padding: 0.6rem 0.75rem;
+    font-size: 0.8rem;
+    color: var(--text-muted);
+}
+.rework-history-item {
+    border-bottom: 1px solid var(--border-glass);
+    padding: 0.4rem 0.65rem;
+}
+.rework-history-item:last-child { border-bottom: none; }
+.rework-history-item-header {
+    display: flex;
+    align-items: center;
+    gap: 0.4rem;
+    font-size: 0.7rem;
+    margin-bottom: 0.2rem;
+}
+.rework-history-time {
+    color: var(--text-muted);
+    font-size: 0.65rem;
+}
+.rework-history-role {
+    color: var(--accent);
+    font-size: 0.65rem;
+}
+.rework-history-delete {
+    margin-left: auto;
+    font-size: 0.8rem;
+    padding: 0 0.3rem;
+    background: none;
+    border: none;
+    color: var(--text-muted);
+    cursor: pointer;
+    opacity: 0;
+    transition: opacity 0.15s;
+}
+.rework-history-item:hover .rework-history-delete { opacity: 1; }
+.rework-history-preview {
+    font-size: 0.75rem;
+    color: var(--text-secondary);
+    cursor: pointer;
+    line-height: 1.4;
+    padding: 0.15rem 0;
+}
+.rework-history-preview:hover {
+    color: var(--text-primary);
 }
 
 .rework-output-content {
@@ -5535,6 +5589,7 @@ select.input option {
     align-items: flex-start;
     gap: 0.75rem;
     padding: 0.6rem 0.75rem;
+    position: relative;
     background: var(--bg-glass);
     border: 1px solid var(--border-glass);
     border-radius: var(--radius-sm);
@@ -5614,13 +5669,30 @@ select.input option {
 .assigned-story-body > * {
     overflow: hidden;
 }
+.assigned-story-body.expanded > * {
+    overflow: visible;
+}
 
 .assigned-story-actions {
+    position: absolute;
+    top: 0.5rem;
+    right: 0.5rem;
     display: flex;
-    flex-direction: column;
-    gap: 0.25rem;
-    align-items: flex-end;
-    flex-shrink: 0;
+    flex-direction: row;
+    gap: 0.35rem;
+    align-items: center;
+}
+.assigned-story-actions .split-btn,
+.assigned-story-actions .rework-history-toggle,
+.assigned-story-actions .btn-save-bank,
+.assigned-story-actions .story-reset-btn {
+    display: none;
+}
+.assigned-story-card:hover .assigned-story-actions .split-btn,
+.assigned-story-card:hover .assigned-story-actions .rework-history-toggle,
+.assigned-story-card:hover .assigned-story-actions .btn-save-bank,
+.assigned-story-card:hover .assigned-story-actions .story-reset-btn {
+    display: inline-flex;
 }
 
 .btn-save-bank {

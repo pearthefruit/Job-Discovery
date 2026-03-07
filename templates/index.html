@@ -522,15 +522,15 @@
                 <!-- Resume Workspace -->
                 <div id="expanded-resume-workspace" style="display:none;">
                     <div id="app-toolbar" class="app-toolbar">
-                        <div class="analyze-split-btn">
-                            <button id="btn-analyze" class="btn btn-primary" onclick="handleAnalyze()">Analyze</button>
-                            <button class="btn btn-primary analyze-toggle" onclick="toggleModelMenu(event)" title="Choose model">&#9662;</button>
-                            <div id="model-menu" class="model-menu">
-                                <div class="model-menu-header">AI Model</div>
-                                <label class="model-option">
+                        <div class="split-btn">
+                            <button id="btn-analyze" class="btn btn-primary split-btn-main" onclick="handleAnalyze()">Analyze</button>
+                            <button class="btn btn-primary split-btn-caret" onclick="toggleSplitMenu('analyze-model-menu', event)" title="Choose model">&#9662;</button>
+                            <div id="analyze-model-menu" class="split-btn-menu">
+                                <div class="split-btn-menu-header">AI Model</div>
+                                <label class="split-btn-option">
                                     <input type="radio" name="ai-model" value="" checked> Auto (rotation)
                                 </label>
-                                <div id="model-menu-list"></div>
+                                <div data-model-list data-radio-name="ai-model"></div>
                             </div>
                         </div>
                         <button id="btn-switch-resume" class="btn btn-ghost" onclick="showSwitchResumeModal()" style="display:none;">Switch Resume</button>
@@ -749,13 +749,13 @@
                         <h2>AI Prep Coach</h2>
                         <div class="coach-actions">
                             <button class="btn btn-primary btn-sm" onclick="handleRecommendStories()">Rank Stories</button>
-                            <div class="prep-guide-split-btn">
-                                <button class="btn btn-ghost btn-sm prep-guide-main" onclick="handlePrepGuide('SAIL')">Prep Guide</button>
-                                <button class="btn btn-ghost btn-sm prep-guide-caret" onclick="togglePrepGuideMenu(event)" title="Choose framework">&#x25BE;</button>
-                                <div class="prep-guide-dropdown" id="prep-guide-dropdown" style="display:none;">
-                                    <button class="prep-guide-option" onclick="handlePrepGuide('SAIL')">SAIL</button>
-                                    <button class="prep-guide-option" onclick="handlePrepGuide('STARI')">STARI</button>
-                                    <button class="prep-guide-option" onclick="handlePrepGuide('STARFAQS')">STARFAQS</button>
+                            <div class="split-btn">
+                                <button class="btn btn-ghost btn-sm split-btn-main" onclick="handlePrepGuide('SAIL')">Prep Guide</button>
+                                <button class="btn btn-ghost btn-sm split-btn-caret" onclick="toggleSplitMenu('prep-guide-menu', event)" title="Choose framework">&#x25BE;</button>
+                                <div class="split-btn-menu" id="prep-guide-menu">
+                                    <button class="split-btn-option" onclick="handlePrepGuide('SAIL')">SAIL</button>
+                                    <button class="split-btn-option" onclick="handlePrepGuide('STARI')">STARI</button>
+                                    <button class="split-btn-option" onclick="handlePrepGuide('STARFAQS')">STARFAQS</button>
                                 </div>
                             </div>
                         </div>

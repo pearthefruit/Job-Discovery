@@ -244,13 +244,50 @@ Rework the candidate's story using the techniques above while strictly following
 - Replace the most important summaries with specific, immersive detail
 - Recreate 1-2 key conversations as short, natural dialogue
 - Build one clear emotion → resilience arc
-- End with a specific, human lesson (and future pacing if target role is provided)
 - Cut anything that doesn't directly serve the narrative
 
 ### OUTPUT FORMAT
-Output the reworked story as flowing prose with minimal formatting — just paragraphs and an occasional bold section header (Hook, Context, Action, Results, Takeaways). No bullet lists in the story body. Write it the way someone would actually say it out loud.
+Output the reworked story as flowing prose with minimal formatting — just paragraphs and an occasional bold section header (Hook, Context, Action, Results). No bullet lists in the story body. Write it the way someone would actually say it out loud.
 
-At the end, add a brief **### Coaching Notes** section (3-5 bullets) explaining the specific changes you made and why, so the candidate can learn to apply these techniques to their other stories.
+**IMPORTANT: Do NOT write any takeaway, lesson learned, future pacing, or closing reflection. End the story at the Results section. Stop after describing the outcomes. The takeaway will be written separately.**
+"""
+
+
+REWORK_TAKEAWAY_PROMPT = """You are helping a job candidate write a short closing for their interview story.
+
+You will be given:
+1. The reworked story (Hook through Results — already written)
+2. The original story (for factual reference)
+3. Optionally, a target role and company
+
+### YOUR TASK
+Write a **Takeaway** paragraph — 2-4 sentences MAX — that closes the story.
+
+### RULES
+1. **Be specific to THIS story.** What is the one concrete thing this person learned from THIS experience that they couldn't have learned from a textbook? Not a generic life lesson — something tied to what actually happened.
+2. **Sound like a real person.** Imagine the candidate is telling this story to a friend over a beer. How would they naturally close it? Use simple, direct language. Short sentences.
+3. **If a target role is provided, add one sentence of future pacing.** Future pacing = describe a SPECIFIC scenario they'd face in that role (not a vague capability claim). Paint a picture of them doing something concrete on that team.
+
+### ABSOLUTE BANS — Using ANY of these is a failure:
+- "It wasn't just X" / "it wasn't X, it was Y" / "not just" / "more than just" / any contrast construction
+- "strategic partnerships" / "complementary partners" / "proactive relationship building"
+- "unlock opportunities" / "new avenues for growth" / "significant long-term value"
+- "drive solutions" / "from concept to revenue" / "solidifying our position"
+- "I'm confident in my ability to..." / "invaluable in helping us..."
+- "navigate challenges" / "staying ahead of the curve"
+- Any phrase that sounds like a LinkedIn post, corporate memo, or consulting deck
+- Any sentence longer than 25 words
+
+### GOOD EXAMPLES OF TONE (do NOT copy these — they're from different stories):
+- "That whole thing taught me that the person closest to the data wins the argument, even if they're the most junior person in the room."
+- "I think about that a lot now — how one hard conversation saved us six months of building the wrong thing."
+
+### BAD EXAMPLES (do NOT write like this):
+- "This experience underscored the importance of building strategic partnerships and proactively identifying complementary solutions to drive long-term value."
+- "I learned that by cultivating genuine relationships and staying ahead of market trends, we can unlock new opportunities for growth."
+
+### OUTPUT FORMAT
+Output ONLY the takeaway paragraph. No headers, no labels, no preamble. Just the 2-4 sentences.
 """
 
 

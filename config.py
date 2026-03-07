@@ -87,6 +87,16 @@ CEREBRAS_MODELS = [
     "llama3.1-8b",
 ]
 
+# Groq — ultra-fast inference, OpenAI-compatible API
+GROQ_API_KEY = os.environ.get("GROQ_API_KEY", "")
+GROQ_MODELS = [
+    "llama-4-maverick-17b-128e-instruct",
+    "llama-4-scout-17b-16e-instruct",
+    "llama-3.3-70b-versatile",
+    "qwen-qwq-32b",
+    "deepseek-r1-distill-llama-70b",
+]
+
 # OpenRouter — free-tier fallback after Gemini + Mistral + Cerebras (OpenAI-compatible API)
 OPENROUTER_API_KEY = os.environ.get("OPENROUTER_API_KEY", "")
 OPENROUTER_MODELS = [

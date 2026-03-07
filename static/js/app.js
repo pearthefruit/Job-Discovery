@@ -362,6 +362,12 @@ const api = {
             body: JSON.stringify(data)
         }).then(r => r.json());
     },
+    async getReworkHistory(storyId) {
+        return fetch(`/api/stories/${storyId}/rework-history`).then(r => r.json());
+    },
+    async deleteReworkHistory(reworkId) {
+        return fetch(`/api/stories/rework-history/${reworkId}`, { method: 'DELETE' }).then(r => r.json());
+    },
     async importStories(text) {
         return fetch('/api/stories/import', {
             method: 'POST',
@@ -2094,8 +2100,8 @@ async function loadExpandedResumePhase(jobId) {
     document.getElementById('expanded-resume-upload').style.display = 'none';
     document.getElementById('expanded-resume-workspace').style.display = 'block';
 
-    // Populate model selector (fire-and-forget, don't block resume loading)
-    populateModelSelect();
+    // Populate model menus (fire-and-forget, don't block resume loading)
+    populateModelMenus();
 
     // Destroy any existing editors
     if (window.resumeEditor) window.resumeEditor.destroyEditors();
@@ -2630,11 +2636,17 @@ async function handleResumeUpload(e) {
     }
 }
 
+// =================== Split-Button Helpers (reusable) ===================
+
 let _modelsLoaded = false;
-async function populateModelSelect() {
+
+/**
+ * Populate all model menus on the page ([data-model-list] elements).
+ * Each menu's radio name comes from data-radio-name on the list element.
+ * Call once — caches after first successful fetch.
+ */
+async function populateModelMenus() {
     if (_modelsLoaded) return;
-    const list = document.getElementById('model-menu-list');
-    if (!list) return;
     try {
         const data = await api.getAIModels();
         if (!data.models || !data.models.length) return;
@@ -2643,26 +2655,65 @@ async function populateModelSelect() {
             if (!grouped[m.provider]) grouped[m.provider] = [];
             grouped[m.provider].push(m);
         }
-        let html = '';
-        for (const [provider, models] of Object.entries(grouped)) {
-            html += `<div class="model-optgroup">${provider}</div>`;
-            for (const m of models) {
-                html += `<label class="model-option"><input type="radio" name="ai-model" value="${m.provider}/${m.model}"> ${m.label}</label>`;
-            }
-        }
-        list.innerHTML = html;
         _modelsLoaded = true;
+        _applyModelMenuHTML(grouped);
     } catch (e) {
         console.warn('Failed to load AI models:', e);
     }
 }
 
-function toggleModelMenu(e) {
+/** Re-apply cached model HTML to all [data-model-list] elements. */
+function _applyModelMenuHTML(grouped) {
+    document.querySelectorAll('[data-model-list]').forEach(el => {
+        const radioName = el.dataset.radioName || 'ai-model';
+        let html = '';
+        for (const [provider, models] of Object.entries(grouped)) {
+            html += `<div class="split-btn-optgroup">${provider}</div>`;
+            for (const m of models) {
+                html += `<label class="split-btn-option"><input type="radio" name="${radioName}" value="${m.provider}/${m.model}"> ${m.label}</label>`;
+            }
+        }
+        el.innerHTML = html;
+    });
+    // Cache the grouped data for late-rendered menus
+    _cachedModelGroups = grouped;
+}
+
+let _cachedModelGroups = null;
+
+/** Populate a single newly-rendered model menu (e.g. after story cards re-render). */
+function populateModelMenu(listEl) {
+    if (!_cachedModelGroups) return;
+    const radioName = listEl.dataset.radioName || 'ai-model';
+    let html = '';
+    for (const [provider, models] of Object.entries(_cachedModelGroups)) {
+        html += `<div class="split-btn-optgroup">${provider}</div>`;
+        for (const m of models) {
+            html += `<label class="split-btn-option"><input type="radio" name="${radioName}" value="${m.provider}/${m.model}"> ${m.label}</label>`;
+        }
+    }
+    listEl.innerHTML = html;
+}
+
+/**
+ * Toggle a split-button dropdown menu by ID.
+ * Adds click-outside-to-close behavior.
+ */
+function toggleSplitMenu(menuId, e) {
     e.stopPropagation();
-    const menu = document.getElementById('model-menu');
+    const menu = document.getElementById(menuId);
+    if (!menu) return;
     menu.classList.toggle('open');
     if (menu.classList.contains('open')) {
-        // Close on outside click
+        // Populate models on first open if this menu has a model list
+        const list = menu.querySelector('[data-model-list]');
+        if (list && !list.children.length) {
+            if (_cachedModelGroups) {
+                populateModelMenu(list);
+            } else {
+                populateModelMenus();
+            }
+        }
         const close = (ev) => {
             if (!menu.contains(ev.target)) {
                 menu.classList.remove('open');
@@ -2673,8 +2724,12 @@ function toggleModelMenu(e) {
     }
 }
 
-function getSelectedModel() {
-    const checked = document.querySelector('input[name="ai-model"]:checked');
+/**
+ * Get the selected model value from a radio group.
+ * @param {string} radioName — the name attribute of the radio inputs (default: 'ai-model')
+ */
+function getSelectedModel(radioName = 'ai-model') {
+    const checked = document.querySelector(`input[name="${radioName}"]:checked`);
     return checked ? checked.value : '';
 }
 
@@ -3818,29 +3873,7 @@ function renderStoryCard(story) {
                 </div>
             </div>
             <div class="story-tiptap-wrapper" id="story-bank-editor-${story.id}">${contentHtml}</div>
-            <div class="story-rework-section" onclick="event.stopPropagation()">
-                <div class="story-rework-actions">
-                    <button class="btn btn-accent btn-sm" id="rework-btn-${story.id}" onclick="handleReworkStory(${story.id})">
-                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"/></svg>
-                        Rework Story
-                    </button>
-                    <input type="text" class="input input-inline input-sm" id="rework-role-${story.id}" placeholder="Target role (optional, for future pacing)" style="flex:1; min-width:150px;">
-                    <input type="text" class="input input-inline input-sm" id="rework-company-${story.id}" placeholder="Target company (optional)" style="max-width:160px;">
-                    <select class="input input-inline input-sm rework-model-select" id="rework-model-${story.id}" onfocus="populateReworkModelSelect(this)">
-                        <option value="">Auto (rotation)</option>
-                    </select>
-                </div>
-                <div class="story-rework-output" id="rework-output-${story.id}" style="display:none;">
-                    <div class="rework-output-header">
-                        <h4>Reworked Version</h4>
-                        <div class="rework-output-actions">
-                            <button class="btn btn-success btn-sm" onclick="applyReworkedStory(${story.id})">Apply</button>
-                            <button class="btn btn-ghost btn-sm" onclick="dismissRework(${story.id})">Dismiss</button>
-                        </div>
-                    </div>
-                    <div class="rework-output-content markdown-body" id="rework-content-${story.id}"></div>
-                </div>
-            </div>
+            ${renderReworkSection(story.id)}
         </div>
     </div>`;
 }
@@ -4192,50 +4225,384 @@ async function autoSaveStoryBankContent(storyId, html) {
 
 // =================== Story Rework (AI) ===================
 
-let _reworkModelsPopulated = false;
-async function populateReworkModelSelect(selectEl) {
-    if (_reworkModelsPopulated) return;
-    try {
-        const data = await api.getAIModels();
-        if (!data.models || !data.models.length) return;
-        // Build options grouped by provider
-        const grouped = {};
-        for (const m of data.models) {
-            if (!grouped[m.provider]) grouped[m.provider] = [];
-            grouped[m.provider].push(m);
+function renderReworkButtons(storyId, ctx = 'prep') {
+    const rid = `${ctx}-${storyId}`;
+    return `
+        <div class="split-btn">
+            <button class="btn btn-accent btn-sm split-btn-main" id="rework-btn-${rid}" onclick="handleReworkStory(${storyId}, '${ctx}')">
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"/></svg>
+                Rework
+            </button>
+            <button class="btn btn-accent btn-sm split-btn-caret" onclick="toggleSplitMenu('rework-menu-${rid}', event)" title="Choose model">&#x25BE;</button>
+            <div class="split-btn-menu" id="rework-menu-${rid}">
+                <div class="split-btn-menu-header">AI Model</div>
+                <label class="split-btn-option">
+                    <input type="radio" name="rework-model-${rid}" value="" checked> Auto (rotation)
+                </label>
+                <div data-model-list data-radio-name="rework-model-${rid}"></div>
+            </div>
+        </div>
+        <button class="btn btn-ghost btn-sm rework-history-toggle" onclick="event.stopPropagation();handleReworkHistory(${storyId}, '${ctx}')">History</button>
+    `;
+}
+
+function renderReworkBody(storyId, ctx = 'prep') {
+    const rid = `${ctx}-${storyId}`;
+    return `
+    <div class="story-rework-section" onclick="event.stopPropagation()">
+        <div class="rework-history-list" id="rework-history-${rid}" style="display:none;"></div>
+        <div class="story-rework-output" id="rework-output-${rid}" style="display:none;">
+            <div class="rework-output-header">
+                <h4>Reworked Version <span class="rework-model-badge" id="rework-model-badge-${rid}"></span></h4>
+                <div class="rework-output-actions">
+                    <button class="btn btn-success btn-sm" onclick="applyReworkedStory(${storyId}, '${ctx}')">Apply</button>
+                    <button class="btn btn-ghost btn-sm" onclick="dismissRework(${storyId}, '${ctx}')">Dismiss</button>
+                </div>
+            </div>
+            <div class="rework-output-content markdown-body" id="rework-content-${rid}"></div>
+        </div>
+    </div>`;
+}
+
+function showReworkCoachCard(storyId, result) {
+    const feed = document.getElementById('interview-insights-feed');
+    if (!feed) return;
+
+    const story = _stageStoriesCache.find(s => (s.story_id || s.id) === storyId);
+    const storyTitle = story ? (story.title || 'Untitled') : `Story #${storyId}`;
+    const html = typeof marked !== 'undefined' ? marked.parse(result.reworked_content) : result.reworked_content;
+    const modelBadge = result.model_used ? `${result.provider || ''}/${result.model_used}` : '';
+    const now = new Date();
+    const timestamp = now.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' });
+
+    // Remove ALL existing rework/history cards (only one at a time in the right pane)
+    feed.querySelectorAll('.rework-insight-card').forEach(c => c.remove());
+
+    const cardHtml = `
+        <div class="insight-card rework-insight-card expanded" data-story-id="${storyId}">
+            <div class="insight-header" onclick="toggleInsightCard(this)">
+                <span class="insight-chevron">▸</span>
+                <div class="insight-meta">
+                    <span class="insight-type-badge type-rework">REWORK</span>
+                    <span class="rework-model-badge">${escapeHtml(modelBadge)}</span>
+                </div>
+                <div class="insight-actions">
+                    <span class="insight-timestamp">${timestamp}</span>
+                    <button class="btn btn-success btn-sm" onclick="event.stopPropagation();applyReworkedStory(${storyId}, 'prep')" title="Apply to story">Apply</button>
+                    <button class="btn-icon" onclick="event.stopPropagation();dismissReworkCoachCard(${storyId})" title="Dismiss">&#x2715;</button>
+                </div>
+            </div>
+            <div class="insight-body">
+                <div class="rework-insight-story-ref">${escapeHtml(storyTitle)}</div>
+                <div class="rework-output-content markdown-body" id="rework-content-prep-${storyId}">${html}</div>
+            </div>
+            <div class="rework-history-list" id="rework-history-prep-${storyId}" style="display:none;padding:0 0.75rem 0.75rem;"></div>
+        </div>`;
+
+    // Remove empty state if present
+    const emptyState = feed.querySelector('.empty-state');
+    if (emptyState) emptyState.remove();
+
+    // Collapse all other insight cards so the rework gets focus
+    feed.querySelectorAll('.insight-card.expanded:not(.rework-insight-card)').forEach(c => {
+        c.classList.remove('expanded');
+    });
+
+    // Remove any previous spacer
+    const oldSpacer = feed.querySelector('.rework-align-spacer');
+    if (oldSpacer) oldSpacer.remove();
+
+    // Insert spacer + rework card at top of feed (hidden until aligned)
+    feed.insertAdjacentHTML('afterbegin', `<div class="rework-align-spacer" style="visibility:hidden"></div>` + cardHtml);
+    const reworkCard = feed.querySelector(`.rework-insight-card[data-story-id="${storyId}"]`);
+    if (reworkCard) reworkCard.style.visibility = 'hidden';
+
+    // Align: set spacer height so rework card top matches story card top
+    requestAnimationFrame(() => {
+        const storyCard = document.querySelector(`.assigned-story-card[data-story-id="${storyId}"]`);
+        const coachPanel = document.querySelector('.interview-coach-panel');
+        const spacer = feed.querySelector('.rework-align-spacer');
+
+        if (storyCard && reworkCard && spacer) {
+            spacer.style.height = '0px';
+            if (coachPanel) coachPanel.scrollTop = 0;
+
+            requestAnimationFrame(() => {
+                const storyTop = storyCard.getBoundingClientRect().top;
+                const reworkTop = reworkCard.getBoundingClientRect().top;
+                const delta = storyTop - reworkTop;
+                if (delta > 0) {
+                    spacer.style.height = delta + 'px';
+                }
+                // Reveal after alignment
+                spacer.style.visibility = 'visible';
+                reworkCard.style.visibility = 'visible';
+                if (storyCard) storyCard.classList.remove('rework-active');
+            });
+        } else {
+            if (reworkCard) reworkCard.style.visibility = 'visible';
+            const spacer = feed.querySelector('.rework-align-spacer');
+            if (spacer) spacer.style.visibility = 'visible';
+            if (storyCard) storyCard.classList.remove('rework-active');
         }
-        let html = '<option value="">Auto (rotation)</option>';
-        for (const [provider, models] of Object.entries(grouped)) {
-            html += `<optgroup label="${provider}">`;
-            for (const m of models) {
-                html += `<option value="${m.provider}/${m.model}">${m.label}</option>`;
-            }
-            html += '</optgroup>';
+    });
+}
+
+function dismissReworkCoachCard(storyId) {
+    const feed = document.getElementById('interview-insights-feed');
+    if (!feed) return;
+    // Remove all rework cards + spacer
+    feed.querySelectorAll('.rework-insight-card').forEach(c => c.remove());
+    const spacer = feed.querySelector('.rework-align-spacer');
+    if (spacer) spacer.remove();
+}
+
+async function handleReworkHistory(storyId, ctx = 'bank') {
+    if (ctx === 'prep') {
+        // Ensure a coach card exists in the right pane to hold the history list
+        const feed = document.getElementById('interview-insights-feed');
+        let card = feed?.querySelector(`.rework-insight-card[data-story-id="${storyId}"]`);
+        if (!card) {
+            // Remove ALL existing rework/history cards (only one at a time)
+            feed.querySelectorAll('.rework-insight-card').forEach(c => c.remove());
+
+            // Create a minimal coach card for history browsing
+            const story = _stageStoriesCache.find(s => (s.story_id || s.id) === storyId);
+            const storyTitle = story ? (story.title || 'Untitled') : `Story #${storyId}`;
+            const emptyState = feed?.querySelector('.empty-state');
+            if (emptyState) emptyState.remove();
+            const cardHtml = `
+                <div class="insight-card rework-insight-card expanded" data-story-id="${storyId}">
+                    <div class="insight-header" onclick="toggleInsightCard(this)">
+                        <span class="insight-chevron">▸</span>
+                        <div class="insight-meta">
+                            <span class="insight-type-badge type-rework">REWORK HISTORY</span>
+                        </div>
+                        <div class="insight-actions">
+                            <button class="btn-icon" onclick="event.stopPropagation();dismissReworkCoachCard(${storyId})" title="Close">&#x2715;</button>
+                        </div>
+                    </div>
+                    <div class="insight-body">
+                        <div class="rework-insight-story-ref">${escapeHtml(storyTitle)}</div>
+                        <div class="rework-output-content markdown-body" id="rework-content-prep-${storyId}" style="display:none;"></div>
+                    </div>
+                    <div class="rework-history-list" id="rework-history-prep-${storyId}" style="display:none;padding:0 0.75rem 0.75rem;"></div>
+                </div>`;
+            // Collapse other insight cards, add spacer for alignment (hidden until aligned)
+            feed.querySelectorAll('.insight-card.expanded:not(.rework-insight-card)').forEach(c => c.classList.remove('expanded'));
+            const oldSpacer = feed.querySelector('.rework-align-spacer');
+            if (oldSpacer) oldSpacer.remove();
+            feed.insertAdjacentHTML('afterbegin', `<div class="rework-align-spacer" style="visibility:hidden"></div>` + cardHtml);
+            const reworkCard = feed.querySelector(`.rework-insight-card[data-story-id="${storyId}"]`);
+            if (reworkCard) reworkCard.style.visibility = 'hidden';
+
+            requestAnimationFrame(() => {
+                const storyCard = document.querySelector(`.assigned-story-card[data-story-id="${storyId}"]`);
+                const coachPanel = document.querySelector('.interview-coach-panel');
+                const spacer = feed.querySelector('.rework-align-spacer');
+                if (storyCard && reworkCard && spacer) {
+                    spacer.style.height = '0px';
+                    if (coachPanel) coachPanel.scrollTop = 0;
+                    requestAnimationFrame(() => {
+                        const storyTop = storyCard.getBoundingClientRect().top;
+                        const reworkTop = reworkCard.getBoundingClientRect().top;
+                        const delta = storyTop - reworkTop;
+                        if (delta > 0) {
+                            spacer.style.height = delta + 'px';
+                        }
+                        // Reveal after alignment
+                        spacer.style.visibility = 'visible';
+                        if (reworkCard) reworkCard.style.visibility = 'visible';
+                    });
+                } else {
+                    if (reworkCard) reworkCard.style.visibility = 'visible';
+                    if (spacer) spacer.style.visibility = 'visible';
+                }
+            });
         }
-        // Apply to ALL rework model selects on the page
-        document.querySelectorAll('.rework-model-select').forEach(sel => {
-            const prev = sel.value;
-            sel.innerHTML = html;
-            sel.value = prev;
-        });
-        _reworkModelsPopulated = true;
-    } catch (e) {
-        console.warn('Failed to load AI models for rework:', e);
+        toggleReworkHistory(storyId, 'prep');
+    } else {
+        toggleReworkHistory(storyId, ctx);
     }
 }
 
-async function handleReworkStory(storyId) {
-    const btn = document.getElementById(`rework-btn-${storyId}`);
-    const outputEl = document.getElementById(`rework-output-${storyId}`);
-    const contentEl = document.getElementById(`rework-content-${storyId}`);
-    const targetRole = document.getElementById(`rework-role-${storyId}`)?.value.trim() || '';
-    const targetCompany = document.getElementById(`rework-company-${storyId}`)?.value.trim() || '';
-    const modelSelect = document.getElementById(`rework-model-${storyId}`);
-    const selectedModel = modelSelect ? modelSelect.value : '';
+function renderReworkSection(storyId, ctx = 'bank') {
+    const rid = `${ctx}-${storyId}`;
+    return `
+    <div class="story-rework-section" onclick="event.stopPropagation()">
+        <div class="story-rework-actions">
+            <div class="split-btn">
+                <button class="btn btn-accent btn-sm split-btn-main" id="rework-btn-${rid}" onclick="handleReworkStory(${storyId}, '${ctx}')">
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"/></svg>
+                    Rework Story
+                </button>
+                <button class="btn btn-accent btn-sm split-btn-caret" onclick="toggleSplitMenu('rework-menu-${rid}', event)" title="Choose model">&#x25BE;</button>
+                <div class="split-btn-menu" id="rework-menu-${rid}">
+                    <div class="split-btn-menu-header">AI Model</div>
+                    <label class="split-btn-option">
+                        <input type="radio" name="rework-model-${rid}" value="" checked> Auto (rotation)
+                    </label>
+                    <div data-model-list data-radio-name="rework-model-${rid}"></div>
+                </div>
+            </div>
+            ${ctx === 'bank' ? `
+            <input type="text" class="input input-inline input-sm" id="rework-role-${rid}" placeholder="Target role (optional, for future pacing)" style="flex:1; min-width:150px;">
+            <input type="text" class="input input-inline input-sm" id="rework-company-${rid}" placeholder="Target company (optional)" style="max-width:160px;">
+            ` : ''}
+            <button class="btn btn-ghost btn-sm rework-history-toggle" onclick="toggleReworkHistory(${storyId}, '${ctx}')">History</button>
+        </div>
+        <div class="rework-history-list" id="rework-history-${rid}" style="display:none;"></div>
+        <div class="story-rework-output" id="rework-output-${rid}" style="display:none;">
+            <div class="rework-output-header">
+                <h4>Reworked Version <span class="rework-model-badge" id="rework-model-badge-${rid}"></span></h4>
+                <div class="rework-output-actions">
+                    <button class="btn btn-success btn-sm" onclick="applyReworkedStory(${storyId}, '${ctx}')">Apply</button>
+                    <button class="btn btn-ghost btn-sm" onclick="dismissRework(${storyId}, '${ctx}')">Dismiss</button>
+                </div>
+            </div>
+            <div class="rework-output-content markdown-body" id="rework-content-${rid}"></div>
+        </div>
+    </div>`;
+}
+
+async function toggleReworkHistory(storyId, ctx = 'bank') {
+    const rid = `${ctx}-${storyId}`;
+    const listEl = document.getElementById(`rework-history-${rid}`);
+    if (!listEl) return;
+    if (listEl.style.display !== 'none') {
+        listEl.style.display = 'none';
+        return;
+    }
+    listEl.innerHTML = '<div class="rework-history-loading">Loading history...</div>';
+    listEl.style.display = 'block';
+    try {
+        const data = await api.getReworkHistory(storyId);
+        const history = data.history || [];
+        if (!history.length) {
+            listEl.innerHTML = '<div class="rework-history-empty">No rework history yet.</div>';
+            return;
+        }
+        listEl.innerHTML = history.map(h => {
+            const preview = (h.reworked_content || '').replace(/[#*_\n]/g, ' ').substring(0, 120).trim();
+            const date = new Date(h.created_at + 'Z');
+            const timeAgo = formatTimeAgo(date);
+            return `<div class="rework-history-item" data-rework-id="${h.id}">
+                <div class="rework-history-item-header">
+                    <span class="rework-model-badge">${h.provider || ''}/${h.model_used || 'unknown'}</span>
+                    <span class="rework-history-time">${timeAgo}</span>
+                    ${h.target_role ? `<span class="rework-history-role">${escapeHtml(h.target_role)}</span>` : ''}
+                    <button class="btn-danger-hover rework-history-delete" onclick="event.stopPropagation(); deleteReworkHistoryItem(${storyId}, ${h.id}, '${ctx}')" title="Delete">&times;</button>
+                </div>
+                <div class="rework-history-preview" onclick="loadReworkFromHistory(${storyId}, ${h.id}, '${ctx}')">${escapeHtml(preview)}...</div>
+            </div>`;
+        }).join('');
+    } catch (e) {
+        listEl.innerHTML = '<div class="rework-history-empty">Failed to load history.</div>';
+    }
+}
+
+function formatTimeAgo(date) {
+    const now = new Date();
+    const diff = Math.floor((now - date) / 1000);
+    if (diff < 60) return 'just now';
+    if (diff < 3600) return `${Math.floor(diff / 60)}m ago`;
+    if (diff < 86400) return `${Math.floor(diff / 3600)}h ago`;
+    if (diff < 604800) return `${Math.floor(diff / 86400)}d ago`;
+    return date.toLocaleDateString();
+}
+
+async function loadReworkFromHistory(storyId, reworkId, ctx = 'bank') {
+    try {
+        const data = await api.getReworkHistory(storyId);
+        const entry = (data.history || []).find(h => h.id === reworkId);
+        if (!entry) { showToast('Rework entry not found', 'error'); return; }
+
+        if (ctx === 'prep') {
+            // Update existing coach card in-place (keep history list visible)
+            const feed = document.getElementById('interview-insights-feed');
+            const card = feed?.querySelector(`.rework-insight-card[data-story-id="${storyId}"]`);
+            if (card) {
+                const contentEl = card.querySelector('.rework-output-content');
+                const html = typeof marked !== 'undefined' ? marked.parse(entry.reworked_content) : entry.reworked_content;
+                if (contentEl) {
+                    contentEl.innerHTML = html;
+                    contentEl.style.display = 'block';
+                }
+                // Update header: badge + model + Apply
+                const meta = card.querySelector('.insight-meta');
+                const modelBadge = `${entry.provider || ''}/${entry.model_used || 'unknown'}`;
+                if (meta) {
+                    meta.innerHTML = `
+                        <span class="insight-type-badge type-rework">REWORK</span>
+                        <span class="rework-model-badge">${escapeHtml(modelBadge)}</span>`;
+                }
+                // Ensure Apply button exists in actions
+                const actions = card.querySelector('.insight-actions');
+                if (actions && !actions.querySelector('.btn-success')) {
+                    actions.insertAdjacentHTML('afterbegin',
+                        `<button class="btn btn-success btn-sm" onclick="event.stopPropagation();applyReworkedStory(${storyId}, 'prep')" title="Apply to story">Apply</button>`);
+                }
+                // Expand the card if collapsed
+                card.classList.add('expanded');
+            } else {
+                // No card exists, create one
+                showReworkCoachCard(storyId, {
+                    reworked_content: entry.reworked_content,
+                    model_used: entry.model_used,
+                    provider: entry.provider,
+                });
+            }
+        } else {
+            const rid = `${ctx}-${storyId}`;
+            const outputEl = document.getElementById(`rework-output-${rid}`);
+            const contentEl = document.getElementById(`rework-content-${rid}`);
+            const badge = document.getElementById(`rework-model-badge-${rid}`);
+            const html = typeof marked !== 'undefined' ? marked.parse(entry.reworked_content) : entry.reworked_content;
+            contentEl.innerHTML = html;
+            outputEl.style.display = 'block';
+            if (badge) badge.textContent = `${entry.provider || ''}/${entry.model_used || 'unknown'}`;
+        }
+    } catch (e) {
+        showToast('Failed to load rework', 'error');
+    }
+}
+
+async function deleteReworkHistoryItem(storyId, reworkId, ctx = 'bank') {
+    const rid = `${ctx}-${storyId}`;
+    try {
+        await api.deleteReworkHistory(reworkId);
+        const listEl = document.getElementById(`rework-history-${rid}`);
+        if (listEl) {
+            const item = listEl.querySelector(`[data-rework-id="${reworkId}"]`);
+            if (item) item.remove();
+            if (!listEl.children.length) {
+                listEl.innerHTML = '<div class="rework-history-empty">No rework history yet.</div>';
+            }
+        }
+    } catch (e) {
+        showToast('Failed to delete', 'error');
+    }
+}
+
+async function handleReworkStory(storyId, ctx = 'bank') {
+    const rid = `${ctx}-${storyId}`;
+    const btn = document.getElementById(`rework-btn-${rid}`);
+    const targetRole = ctx === 'prep' && expandedJobData ? (expandedJobData.title || '') : (document.getElementById(`rework-role-${rid}`)?.value.trim() || '');
+    const targetCompany = ctx === 'prep' && expandedJobData ? (expandedJobData.company || '') : (document.getElementById(`rework-company-${rid}`)?.value.trim() || '');
+    const selectedModel = getSelectedModel(`rework-model-${rid}`);
 
     btn.disabled = true;
+    const btnLabel = ctx === 'prep' ? 'Rework' : 'Rework Story';
     btn.innerHTML = '<span class="spinner-sm"></span> Reworking...';
-    outputEl.style.display = 'none';
+
+    // Highlight source card in prep mode
+    if (ctx === 'prep') {
+        const card = document.querySelector(`.assigned-story-card[data-story-id="${storyId}"]`);
+        if (card) card.classList.add('rework-active');
+    } else {
+        const outputEl = document.getElementById(`rework-output-${rid}`);
+        if (outputEl) outputEl.style.display = 'none';
+    }
 
     try {
         const result = await api.reworkStory(storyId, {
@@ -4249,62 +4616,97 @@ async function handleReworkStory(storyId) {
             return;
         }
 
-        // Render the reworked content as markdown
-        const html = typeof marked !== 'undefined' ? marked.parse(result.reworked_content) : result.reworked_content;
-        contentEl.innerHTML = html;
-        outputEl.style.display = 'block';
+        if (ctx === 'prep') {
+            // Show in right pane
+            showReworkCoachCard(storyId, result);
+        } else {
+            // Inline (bank mode)
+            const outputEl = document.getElementById(`rework-output-${rid}`);
+            const contentEl = document.getElementById(`rework-content-${rid}`);
+            const html = typeof marked !== 'undefined' ? marked.parse(result.reworked_content) : result.reworked_content;
+            contentEl.innerHTML = html;
+            outputEl.style.display = 'block';
 
-        if (result.model_used) {
-            showToast(`Reworked with ${result.provider}/${result.model_used}`, 'success');
+            const badge = document.getElementById(`rework-model-badge-${rid}`);
+            if (badge && result.model_used) {
+                badge.textContent = `${result.provider}/${result.model_used}`;
+            }
+
+            // Refresh history list if it's open
+            const histList = document.getElementById(`rework-history-${rid}`);
+            if (histList && histList.style.display !== 'none') {
+                toggleReworkHistory(storyId, ctx);
+                toggleReworkHistory(storyId, ctx);
+            }
         }
     } catch (e) {
         showToast('Rework failed: ' + e.message, 'error');
+        if (ctx === 'prep') {
+            const card = document.querySelector(`.assigned-story-card[data-story-id="${storyId}"]`);
+            if (card) card.classList.remove('rework-active');
+        }
     } finally {
         btn.disabled = false;
-        btn.innerHTML = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"/></svg> Rework Story';
+        btn.innerHTML = `<svg width="${ctx === 'prep' ? 12 : 14}" height="${ctx === 'prep' ? 12 : 14}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"/></svg> ${btnLabel}`;
     }
 }
 
-function applyReworkedStory(storyId) {
-    const contentEl = document.getElementById(`rework-content-${storyId}`);
+function applyReworkedStory(storyId, ctx = 'bank') {
+    const rid = `${ctx}-${storyId}`;
+
+    // In prep mode, read from insight card in right pane
+    const contentEl = ctx === 'prep'
+        ? document.querySelector(`.rework-insight-card[data-story-id="${storyId}"] .rework-output-content`)
+        : document.getElementById(`rework-content-${rid}`);
     if (!contentEl) return;
 
-    // Strip coaching notes section before applying
-    let html = contentEl.innerHTML;
-    const coachingIdx = html.indexOf('<h3>Coaching Notes</h3>');
-    if (coachingIdx !== -1) {
-        html = html.substring(0, coachingIdx).trim();
-    }
-    // Also try "### Coaching Notes" rendered as <h3>
-    const coachingIdx2 = html.indexOf('Coaching Notes');
-    if (coachingIdx2 !== -1) {
-        // Find the nearest preceding heading tag
-        const before = html.substring(0, coachingIdx2);
-        const lastH3 = before.lastIndexOf('<h3');
-        if (lastH3 !== -1) {
-            html = html.substring(0, lastH3).trim();
+    const html = contentEl.innerHTML;
+
+    if (ctx === 'prep') {
+        // Interview prep: save to custom_content
+        if (window.storyEditor) {
+            window.storyEditor.setContent('prep', storyId, html);
         }
+        if (expandedJobId && _selectedStageId) {
+            api.updateStageStoryContent(expandedJobId, _selectedStageId, storyId, html);
+        }
+        // Mark card as having custom content
+        const card = document.querySelector(`.assigned-story-card[data-story-id="${storyId}"]`);
+        if (card && !card.classList.contains('has-custom-content')) {
+            card.classList.add('has-custom-content');
+            const title = card.querySelector('h4');
+            if (title && !title.querySelector('.custom-badge')) {
+                title.insertAdjacentHTML('beforeend', ' <span class="custom-badge">edited</span>');
+            }
+        }
+        // Mark insight card as applied
+        const insightCard = document.querySelector(`.rework-insight-card[data-story-id="${storyId}"]`);
+        if (insightCard) {
+            const applyBtn = insightCard.querySelector('.btn-success');
+            if (applyBtn) {
+                applyBtn.textContent = '✓ Applied';
+                applyBtn.disabled = true;
+                applyBtn.classList.remove('btn-success');
+                applyBtn.classList.add('btn-ghost');
+            }
+        }
+    } else {
+        // Story bank: save to stories.content
+        if (window.storyEditor) {
+            window.storyEditor.setContent('bank', storyId, html);
+        }
+        autoSaveStoryBankContent(storyId, html);
+        const story = _storiesCache.find(s => s.id === storyId);
+        if (story) story.content = html;
     }
 
-    // Update the TipTap editor
-    if (window.storyEditor) {
-        window.storyEditor.setContent('bank', storyId, html);
-    }
-
-    // Also save to DB immediately
-    autoSaveStoryBankContent(storyId, html);
-
-    // Update cache
-    const story = _storiesCache.find(s => s.id === storyId);
-    if (story) story.content = html;
-
-    // Hide rework output
-    dismissRework(storyId);
+    if (ctx !== 'prep') dismissRework(storyId, ctx);
     showToast('Reworked story applied', 'success');
 }
 
-function dismissRework(storyId) {
-    const outputEl = document.getElementById(`rework-output-${storyId}`);
+function dismissRework(storyId, ctx = 'bank') {
+    const rid = `${ctx}-${storyId}`;
+    const outputEl = document.getElementById(`rework-output-${rid}`);
     if (outputEl) outputEl.style.display = 'none';
 }
 
@@ -5238,12 +5640,15 @@ function renderAssignedStories() {
                         ).join('')}</div>` : ''}
                     </div>
                     <div class="assigned-story-body" id="story-body-${sid}">
-                        <div class="story-tiptap-wrapper" id="story-editor-${sid}">${contentToHtml(story.custom_content || story.content || '') || '<em>No content</em>'}</div>
+                        <div>
+                            <div class="story-tiptap-wrapper" id="story-editor-${sid}">${contentToHtml(story.custom_content || story.content || '') || '<em>No content</em>'}</div>
+                        </div>
                     </div>
                 </div>
-                <div class="assigned-story-actions">
+                <div class="assigned-story-actions" onclick="event.stopPropagation()">
                     ${story.stage_only ? `<button class="btn btn-ghost btn-sm btn-save-bank" onclick="event.stopPropagation();handlePromoteToBank(${sid})" title="Save to Story Bank for other interviews">Save to Bank</button>` : ''}
                     ${hasCustom ? `<button class="btn btn-ghost btn-sm story-reset-btn" onclick="event.stopPropagation();resetStoryToOriginal(${sid})" title="Reset to original">&#x21BA;</button>` : ''}
+                    ${renderReworkButtons(sid, 'prep')}
                     <button class="btn btn-ghost btn-sm btn-danger-hover" onclick="event.stopPropagation();handleRemoveStoryFromStage(${sid})" title="Remove">&times;</button>
                 </div>
             </div>
@@ -5398,12 +5803,21 @@ async function handleRemoveStoryFromStage(storyId) {
 }
 
 function handleAssignedStoryDragStart(e, storyId) {
+    // Only allow drag from the handle, and only when collapsed
+    const fromHandle = e.target.closest('.assigned-story-drag-handle');
+    const card = e.target.closest('.assigned-story-card');
+    const body = document.getElementById(`story-body-${storyId}`);
+    const isExpanded = body && body.classList.contains('expanded');
+
+    if (!fromHandle || isExpanded) {
+        e.preventDefault();
+        return;
+    }
+
     _draggedAssignedStoryId = storyId;
     e.dataTransfer.setData('application/story-id', String(storyId));
     e.dataTransfer.effectAllowed = 'move';
-    // Add a drag ghost effect
     requestAnimationFrame(() => {
-        const card = e.target.closest('.assigned-story-card');
         if (card) card.classList.add('dragging');
     });
 }
@@ -6178,23 +6592,7 @@ async function handlePrepGuide(framework) {
 
 // ---- Prep Guide Split Button ----
 
-function togglePrepGuideMenu(e) {
-    e.stopPropagation();
-    const dd = document.getElementById('prep-guide-dropdown');
-    if (!dd) return;
-    const show = dd.style.display === 'none';
-    dd.style.display = show ? 'flex' : 'none';
-    if (show) {
-        // Close on outside click
-        const close = (ev) => {
-            if (!dd.contains(ev.target)) {
-                dd.style.display = 'none';
-                document.removeEventListener('click', close);
-            }
-        };
-        setTimeout(() => document.addEventListener('click', close), 0);
-    }
-}
+// Prep guide uses generic toggleSplitMenu('prep-guide-menu', e)
 
 // ---- Copy Stories from Previous Stages ----
 

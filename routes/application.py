@@ -202,6 +202,7 @@ def list_ai_models():
         CLAUDE_API_KEY, CLAUDE_MODEL,
         MISTRAL_API_KEY, MISTRAL_MODELS,
         CEREBRAS_API_KEY, CEREBRAS_MODELS,
+        GROQ_API_KEY, GROQ_MODELS,
         OPENROUTER_API_KEY, OPENROUTER_MODELS,
     )
     models = []
@@ -214,6 +215,9 @@ def list_ai_models():
     if CEREBRAS_API_KEY:
         for m in CEREBRAS_MODELS:
             models.append({"provider": "cerebras", "model": m, "label": m})
+    if GROQ_API_KEY:
+        for m in GROQ_MODELS:
+            models.append({"provider": "groq", "model": m, "label": m})
     if OPENROUTER_API_KEY:
         for m in OPENROUTER_MODELS:
             short = m.split('/')[-1].replace(':free', '')

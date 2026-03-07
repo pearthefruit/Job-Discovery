@@ -567,9 +567,9 @@ Generate a complete SAIL story based on the bullet point. Ask yourself what deta
 
 @interview_bp.route("/api/stories/<int:story_id>/rework", methods=["POST"])
 def rework_story(story_id):
-    """Rework a story to be more engaging using elite storytelling techniques."""
+    """Rework a story using two-pass approach: body first, then takeaway."""
     from ai.client import AIClient
-    from ai.prompts import REWORK_STORY_PROMPT
+    from ai.prompts import REWORK_STORY_PROMPT, REWORK_TAKEAWAY_PROMPT
 
     story = db.get_story(story_id)
     if not story:
@@ -579,7 +579,7 @@ def rework_story(story_id):
     target_role = data.get('target_role', '')
     target_company = data.get('target_company', '')
 
-    prompt = REWORK_STORY_PROMPT + f"""
+    story_context = f"""
 
 ### STORY TO REWORK
 **Title**: {story['title']}
@@ -590,13 +590,8 @@ def rework_story(story_id):
 {story.get('content', '')}
 """
 
-    if target_role or target_company:
-        prompt += f"""
-### TARGET ROLE CONTEXT (for future pacing)
-**Role**: {target_role or 'Not specified'}
-**Company**: {target_company or 'Not specified'}
-Use this context to add future pacing at the end of the story — help the interviewer envision the candidate applying these qualities in this specific role.
-"""
+    # --- Pass 1: Rework body (Hook → Results, no takeaway) ---
+    body_prompt = REWORK_STORY_PROMPT + story_context
 
     client = AIClient.from_config()
 
@@ -607,18 +602,83 @@ Use this context to add future pacing at the end of the story — help the inter
         if len(parts) == 2:
             client.force_model(parts[0], parts[1])
 
+    # Use diversity rotation (different model each click) unless user forced a model
+    _rework_call = client.analyze_interview if client._forced_model else client.analyze_with_diversity
+
     try:
-        result = client.analyze_interview(prompt)
+        body_result = _rework_call(body_prompt)
     except Exception as e:
         return jsonify({"error": f"Story rework failed: {e}"}), 500
 
     _log_usage(client, 'story_rework')
+
+    # Force same model for pass 2 so takeaway matches body style
+    if not client._forced_model and client.last_provider and client.last_model_used:
+        client.force_model(client.last_provider, client.last_model_used)
+
+    # --- Pass 2: Generate takeaway separately ---
+    takeaway_prompt = REWORK_TAKEAWAY_PROMPT + f"""
+
+### REWORKED STORY (for context — already written)
+{body_result}
+
+### ORIGINAL STORY (for factual reference)
+{story.get('content', '')}
+"""
+    if target_role or target_company:
+        takeaway_prompt += f"""
+### TARGET ROLE (for future pacing)
+**Role**: {target_role or 'Not specified'}
+**Company**: {target_company or 'Not specified'}
+"""
+
+    try:
+        takeaway_result = client.analyze_interview(takeaway_prompt)
+    except Exception as e:
+        # If takeaway fails, return body without it
+        return jsonify({
+            "reworked_content": body_result,
+            "story_id": story_id,
+            "model_used": client.last_model_used,
+            "provider": client.last_provider,
+        })
+
+    _log_usage(client, 'story_rework_takeaway')
+
+    # Combine body + takeaway
+    combined = body_result.rstrip() + "\n\n**Takeaway**\n" + takeaway_result.strip()
+
+    # Auto-save to rework history
+    history_id = db.add_rework_history(
+        story_id=story_id,
+        reworked_content=combined,
+        model_used=client.last_model_used,
+        provider=client.last_provider,
+        target_role=target_role or None,
+        target_company=target_company or None,
+    )
+
     return jsonify({
-        "reworked_content": result,
+        "reworked_content": combined,
         "story_id": story_id,
+        "history_id": history_id,
         "model_used": client.last_model_used,
         "provider": client.last_provider,
     })
+
+
+@interview_bp.route("/api/stories/<int:story_id>/rework-history", methods=["GET"])
+def get_rework_history(story_id):
+    """Get all rework history entries for a story."""
+    history = db.get_rework_history(story_id)
+    return jsonify({"history": history})
+
+
+@interview_bp.route("/api/stories/rework-history/<int:rework_id>", methods=["DELETE"])
+def delete_rework_entry(rework_id):
+    """Delete a single rework history entry."""
+    db.delete_rework_history(rework_id)
+    return jsonify({"success": True})
 
 
 def _sections_to_text(sections):

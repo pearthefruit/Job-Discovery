@@ -143,6 +143,19 @@ class JobDiscoveryDB:
             )""")
             conn.execute("CREATE INDEX IF NOT EXISTS idx_api_usage_created ON api_usage_log(created_at)")
             conn.execute("CREATE INDEX IF NOT EXISTS idx_api_usage_provider ON api_usage_log(provider)")
+            # Story rework history table
+            conn.execute("""CREATE TABLE IF NOT EXISTS story_rework_history (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                story_id INTEGER NOT NULL,
+                reworked_content TEXT NOT NULL,
+                model_used TEXT,
+                provider TEXT,
+                target_role TEXT,
+                target_company TEXT,
+                created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                FOREIGN KEY(story_id) REFERENCES stories(id) ON DELETE CASCADE
+            )""")
+            conn.execute("CREATE INDEX IF NOT EXISTS idx_rework_history_story ON story_rework_history(story_id)")
             # Analysis history table
             conn.execute("""CREATE TABLE IF NOT EXISTS analysis_history (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -801,6 +814,39 @@ class JobDiscoveryDB:
     def delete_story_version(self, version_id):
         with self.get_connection() as conn:
             conn.execute("DELETE FROM story_versions WHERE id = ?", (version_id,))
+
+    # --- Story Rework History ---
+
+    def add_rework_history(self, story_id, reworked_content, model_used=None,
+                           provider=None, target_role=None, target_company=None):
+        with self.get_connection() as conn:
+            cursor = conn.execute(
+                """INSERT INTO story_rework_history
+                   (story_id, reworked_content, model_used, provider, target_role, target_company)
+                   VALUES (?, ?, ?, ?, ?, ?)""",
+                (story_id, reworked_content, model_used, provider, target_role, target_company),
+            )
+            return cursor.lastrowid
+
+    def get_rework_history(self, story_id):
+        with self.get_connection() as conn:
+            rows = conn.execute(
+                """SELECT * FROM story_rework_history
+                   WHERE story_id = ? ORDER BY created_at DESC""",
+                (story_id,),
+            ).fetchall()
+            return [dict(r) for r in rows]
+
+    def delete_rework_history(self, rework_id):
+        with self.get_connection() as conn:
+            conn.execute("DELETE FROM story_rework_history WHERE id = ?", (rework_id,))
+
+    def get_rework_entry(self, rework_id):
+        with self.get_connection() as conn:
+            row = conn.execute(
+                "SELECT * FROM story_rework_history WHERE id = ?", (rework_id,),
+            ).fetchone()
+            return dict(row) if row else None
 
     # --- Interview Insights ---
 
