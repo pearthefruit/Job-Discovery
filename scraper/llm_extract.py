@@ -3,9 +3,13 @@ LLM-powered job data extraction with multi-model fallback.
 Tier 2 extractor: runs after JSON-LD fails, before CSS selectors.
 
 Fallback chain:
-  1. Rotate through Gemini models (free tier has per-model rate limits)
-  2. Fall back to Claude if all Gemini models are rate-limited
-  3. Skip rate-limited models for a cooldown period
+  1. Gemini (key × model rotation, free tier rate limits)
+  2. Groq (fast inference, free tier)
+  3. Mistral (free tier direct API)
+  4. Cerebras (free tier fast inference)
+  5. OpenRouter (free-tier community models)
+  6. Claude (last resort, paid)
+Skip rate-limited combos for a cooldown period.
 """
 
 import json
@@ -46,22 +50,63 @@ except ImportError:
     CLAUDE_API_KEY = ""
     CLAUDE_MODEL = "claude-sonnet-4-20250514"
 
+# OpenAI-compatible providers for scraper fallback
+try:
+    from config import (
+        GROQ_API_KEY, GROQ_MODELS,
+        MISTRAL_API_KEY, MISTRAL_MODELS,
+        CEREBRAS_API_KEY, CEREBRAS_MODELS,
+        OPENROUTER_API_KEY, OPENROUTER_MODELS,
+    )
+except ImportError:
+    GROQ_API_KEY = ""
+    GROQ_MODELS = []
+    MISTRAL_API_KEY = ""
+    MISTRAL_MODELS = []
+    CEREBRAS_API_KEY = ""
+    CEREBRAS_MODELS = []
+    OPENROUTER_API_KEY = ""
+    OPENROUTER_MODELS = []
+
 GEMINI_API_BASE = "https://generativelanguage.googleapis.com/v1beta/models"
 CLAUDE_API_URL = "https://api.anthropic.com/v1/messages"
 
+OPENAI_COMPAT_URLS = {
+    'groq': "https://api.groq.com/openai/v1/chat/completions",
+    'mistral': "https://api.mistral.ai/v1/chat/completions",
+    'cerebras': "https://api.cerebras.ai/v1/chat/completions",
+    'openrouter': "https://openrouter.ai/api/v1/chat/completions",
+}
+
 
 class LLMExtractor:
-    """Extracts structured job data from page text using a multi-model fallback chain."""
+    """Extracts structured job data from page text using a multi-model fallback chain.
+
+    Fallback chain: Gemini → Groq → Mistral → Cerebras → OpenRouter → Claude
+    """
 
     def __init__(self, log=None, usage_callback=None):
         self.log = log
         self.usage_callback = usage_callback  # fn(call_type, provider, model, key_hint, prompt_tok, comp_tok, total_tok)
         self.api_keys = [k for k in LLM_API_KEYS if k and k != "PLACEHOLDER_API_KEY"]
         self.api_key = self.api_keys[0] if self.api_keys else GEMINI_API_KEY  # backward compat
-        self.enabled = bool(LLM_EXTRACTION_ENABLED and self.api_keys)
         self._http = None
         # Track when each key×model combo was rate-limited: {"key[-4:]_model": timestamp}
         self._rate_limited_at = {}
+
+        # Build OpenAI-compatible fallback providers: [(provider, api_key, [models])]
+        self._fallback_providers = []
+        if GROQ_API_KEY and GROQ_MODELS:
+            self._fallback_providers.append(('groq', GROQ_API_KEY, GROQ_MODELS))
+        if MISTRAL_API_KEY and MISTRAL_MODELS:
+            self._fallback_providers.append(('mistral', MISTRAL_API_KEY, MISTRAL_MODELS))
+        if CEREBRAS_API_KEY and CEREBRAS_MODELS:
+            self._fallback_providers.append(('cerebras', CEREBRAS_API_KEY, CEREBRAS_MODELS))
+        if OPENROUTER_API_KEY and OPENROUTER_MODELS:
+            self._fallback_providers.append(('openrouter', OPENROUTER_API_KEY, OPENROUTER_MODELS))
+
+        has_any = bool(self.api_keys or self._fallback_providers or CLAUDE_API_KEY)
+        self.enabled = bool(LLM_EXTRACTION_ENABLED and has_any)
 
     @property
     def http(self):
@@ -125,15 +170,18 @@ class LLMExtractor:
 
         text = self._prepare_links_text(html, source_url)
         if len(text.strip()) < 100:
+            self._info("[LLM] Page text too short for link discovery (<100 chars)")
             return []
 
         prompt = self._build_listing_prompt(text, source_url)
         raw = self._call_llm(prompt)
         if not raw:
+            self._warn("[LLM] Link discovery call returned no response")
             return []
 
         parsed = self._parse_json_response(raw)
         if not parsed or not isinstance(parsed.get('job_links'), list):
+            self._warn("[LLM] Link discovery response could not be parsed")
             return []
 
         links = parsed['job_links']
@@ -256,10 +304,12 @@ PAGE DATA:
     # =================== Multi-Model LLM Call ===================
 
     def _call_llm(self, prompt):
-        """Try Gemini key × model combinations, then Claude as last resort.
-        For each model, rotate through all keys on rate limit.
+        """Try Gemini → Groq → Mistral → Cerebras → OpenRouter → Claude.
+        For Gemini: rotate through key × model combinations.
+        For OpenAI-compat providers: try each model, skip on rate limit.
         Returns raw text response or None.
         """
+        # Phase 1: Gemini key × model rotation
         for model in LLM_FALLBACK_MODELS:
             for key in self.api_keys:
                 combo = f"{key[-4:]}_{model}"
@@ -270,9 +320,21 @@ PAGE DATA:
                 if result is not None:
                     return result
 
-        # Phase 2: Claude fallback
+        # Phase 2: OpenAI-compatible providers (Groq, Mistral, Cerebras, OpenRouter)
+        for provider, api_key, models in self._fallback_providers:
+            for model in models:
+                combo = f"{provider}_{model}"
+                if self._is_cooled_down(combo):
+                    continue
+
+                self._info(f"[LLM] Trying {provider}/{model}")
+                result = self._call_openai_compat(prompt, provider, api_key, model)
+                if result is not None:
+                    return result
+
+        # Phase 3: Claude as last resort
         if CLAUDE_API_KEY:
-            self._info("[LLM] All Gemini combos exhausted, trying Claude")
+            self._info("[LLM] All providers exhausted, trying Claude")
             result = self._call_claude(prompt)
             if result is not None:
                 return result
@@ -341,6 +403,70 @@ PAGE DATA:
             return None
         except Exception as e:
             self._warn(f"[LLM] {model} error: {e}")
+            return None
+
+    def _call_openai_compat(self, prompt, provider, api_key, model):
+        """Call an OpenAI-compatible provider (Groq, Mistral, Cerebras, OpenRouter).
+        Returns raw text response or None on failure.
+        """
+        base_url = OPENAI_COMPAT_URLS.get(provider)
+        if not base_url:
+            return None
+
+        combo = f"{provider}_{model}"
+        try:
+            response = self.http.post(
+                base_url,
+                headers={
+                    "Authorization": f"Bearer {api_key}",
+                    "Content-Type": "application/json",
+                },
+                json={
+                    "model": model,
+                    "max_tokens": 4096,
+                    "temperature": 0.1,
+                    "messages": [{"role": "user", "content": prompt}],
+                },
+                timeout=LLM_TIMEOUT_SECONDS,
+            )
+
+            if response.status_code == 429:
+                self._rate_limited_at[combo] = time.time()
+                self._warn(f"[LLM] {provider}/{model} rate-limited (429)")
+                return None
+
+            if response.status_code == 503:
+                self._warn(f"[LLM] {provider}/{model} overloaded (503), rotating")
+                return None
+
+            if response.status_code != 200:
+                self._warn(f"[LLM] {provider}/{model} returned HTTP {response.status_code}")
+                return None
+
+            data = response.json()
+            choices = data.get("choices", [])
+            if not choices:
+                return None
+
+            text = choices[0].get("message", {}).get("content", "") or ""
+            if text.strip():
+                self._info(f"[LLM] {provider}/{model} responded successfully")
+                if self.usage_callback:
+                    try:
+                        usage = data.get("usage", {})
+                        self.usage_callback('llm_extract', provider, model, f"...{api_key[-4:]}",
+                                            usage.get('prompt_tokens', 0), usage.get('completion_tokens', 0),
+                                            usage.get('total_tokens', 0))
+                    except Exception:
+                        pass
+                return text
+            return None
+
+        except httpx.TimeoutException:
+            self._warn(f"[LLM] {provider}/{model} timed out")
+            return None
+        except Exception as e:
+            self._warn(f"[LLM] {provider}/{model} error: {e}")
             return None
 
     def _call_claude(self, prompt):

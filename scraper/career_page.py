@@ -100,6 +100,8 @@ class CareerPageScraper:
                 self._info(f"[LLM-USED] LLM discovered {len(job_links)} job link(s) on {domain}")
                 self._llm_used_for.add(domain)
                 job_links = self._filter_job_urls(job_links, source['url'])
+            else:
+                self._info("LLM link discovery returned no results")
 
         # If still no links, try as single detail page
         if not job_links:

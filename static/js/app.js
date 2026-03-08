@@ -4395,11 +4395,16 @@ async function handleSaveVersion(storyId, ctx = 'prep') {
         }
         showToast('Version saved', 'success');
 
-        // Refresh history list if it's currently open
+        // Show history so the user sees their new entry
         const rid = `${ctx}-${storyId}`;
         const histList = document.getElementById(`rework-history-${rid}`);
-        if (histList && histList.style.display !== 'none') {
-            toggleReworkHistory(storyId, ctx, true);
+        if (histList) {
+            // History panel exists — refresh it and scroll into view
+            await toggleReworkHistory(storyId, ctx, true);
+            histList.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+        } else if (ctx === 'prep') {
+            // No history panel yet — create one via handleReworkHistory
+            handleReworkHistory(storyId, ctx);
         }
     } catch (err) {
         showToast('Failed to save version: ' + err.message, 'error');
@@ -4449,6 +4454,7 @@ function showReworkCoachCard(storyId, result) {
                 <div class="insight-actions">
                     <span class="insight-timestamp">${timestamp}</span>
                     <button class="btn btn-success btn-sm" onclick="event.stopPropagation();applyReworkedStory(${storyId}, 'prep')" title="Apply to story">Apply</button>
+                    <button class="btn btn-ghost btn-sm" onclick="event.stopPropagation();toggleReworkHistory(${storyId}, 'prep', false)" title="Version history">History</button>
                     <button class="btn-icon" onclick="event.stopPropagation();dismissReworkCoachCard(${storyId})" title="Dismiss">&#x2715;</button>
                 </div>
             </div>

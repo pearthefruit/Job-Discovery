@@ -635,10 +635,19 @@ def rework_story(story_id):
     try:
         takeaway_result = client.analyze_interview(takeaway_prompt)
     except Exception as e:
-        # If takeaway fails, return body without it
+        # Takeaway failed — save body-only to history so it's not lost
+        history_id = db.add_rework_history(
+            story_id=story_id,
+            reworked_content=body_result,
+            model_used=client.last_model_used,
+            provider=client.last_provider,
+            target_role=target_role or None,
+            target_company=target_company or None,
+        )
         return jsonify({
             "reworked_content": body_result,
             "story_id": story_id,
+            "history_id": history_id,
             "model_used": client.last_model_used,
             "provider": client.last_provider,
         })

@@ -193,82 +193,124 @@ Competency gaps and mitigation strategies.
 Format the output in clean Markdown."""
 
 
-REWORK_STORY_PROMPT = """You are an elite interview storytelling coach. Your job is to transform flat, fact-listing interview stories into vivid, memorable narratives that make interviewers lean in.
+REWORK_STORY_PROMPT = """You are rewriting a behavioral interview story for a Product Manager preparing for job interviews. You will receive the candidate's existing story and must produce a polished, spoken-word version ready for an interview.
 
-### THE PROBLEM WITH MOST INTERVIEW STORIES
-Most candidates tell stories like a police report — "I did X, then Y, then Z, and everyone was happy." This is forgettable. It fails to engage the listener because it only TELLS what happened instead of SHOWING it.
+## Core Philosophy
 
-### WHAT MAKES A STORY MEMORABLE
-The best interview stories use these techniques:
+The goal is NOT to sound impressive. The goal is to make the interviewer **see the candidate working at their company**. Every story should feel like you're telling a friend about something that happened at work — not presenting a case study, not performing a TED talk, not reciting a STAR template.
 
-1. **Show, Don't Tell**: Instead of summarizing ("I did some research"), immerse the listener in the moment ("I picked up the phone and cold-called 10 potential customers in the UK market, and within the first 3 conversations I realized something was off — the privacy regulations were completely different from what we'd assumed").
+## The 8 Principles
 
-2. **Raw Inner Thoughts**: Share your genuine, unfiltered gut reactions at key moments. You can filter what you say, but you can't filter your thoughts — so sharing them makes you authentic. Example: "In that moment, I was gutted. It felt like he'd just completely written me off." This vulnerability is powerful BECAUSE you then show how you responded maturely despite the emotional reaction.
+### 1. Show, Don't Tell
+Immerse the listener in the situation. Don't announce what you're about to demonstrate ("This shows my leadership skills"). Let the actions speak. If you organized a cross-functional team, describe what you actually did — don't label it.
 
-3. **Emotion → Resilience Arc**: The pattern is: (a) something challenging happens, (b) you share your honest emotional reaction, (c) you show how you channeled that into productive action. This arc demonstrates emotional intelligence and grit without you having to claim those qualities.
+### 2. Raw Thought, Then Pivot
+When there's a moment of tension or surprise, share the gut reaction BEFORE the mature response. "My first thought was — this is going to blow up the timeline" is more human than jumping straight to the composed solution. But keep it brief — one sentence of reaction, then pivot to action.
 
-4. **Specificity Over Generality**: Replace vague phrases with concrete details.
-   - BAD: "I did a little bit of my own research"
-   - GOOD: "I spent the next week talking to 15 potential customers in the German market, then dove into the regulatory filings to compare privacy frameworks"
+### 3. Concrete Detail (Selective)
+Numbers build credibility, but only include ones that move the story forward. "$1.3 million in six months" matters. "I scheduled a meeting on Tuesday at 2:15 PM" does not. Pick 3-5 specific details that make the story feel real without turning it into a data dump.
 
-5. **Recreate Dialogue**: Don't summarize conversations — recreate them. Let the interviewer hear the actual exchange.
-   - BAD: "I went to my boss and suggested the German market"
-   - GOOD: "I walked into his office and said, 'Look, I know you're excited about the UK market, but I've talked to customers there and they're honestly not that interested — here's what I found about Germany instead.'"
+### 4. Dialogue Over Summary
+If there was a key conversation — a pushback moment, a negotiation, a disagreement — recreate it as brief dialogue rather than summarizing it. "I told the CSM — I'd love a platform solution, but we don't have the timeline" is better than "I communicated my concerns about the timeline to the CSM."
 
-6. **No Generic Endings**: Never end with "everyone was happy and it was a success." Instead, share (a) the specific, nuanced outcome (including partial wins or surprising twists), and (b) the real lesson you personally internalized.
+**CRITICAL: Only use dialogue that actually happened or is a reasonable reconstruction of what was said.** Never invent conversations, characters, or scenes that aren't in the raw notes. If the notes don't describe a specific exchange, summarize instead of fabricating.
 
-7. **Future Pacing (if target role is provided)**: Connect the story's lesson to the specific role. Paint a picture of you applying that same quality on their team. This is "inception" — planting the image of you already working there. Example: "At [Company], I know there'll be situations where I'm the junior person pushing back on a senior partner's assumption. And I know from this experience that being closest to the data gives me the credibility to do that respectfully but firmly."
+### 5. Compress the Middle, Expand the Bookends
+The operational work (what you built, how you analyzed it) gets 1-3 sentences. The emotional setup (the moment you realized the problem) and the ending (result + takeaway + future pace) get the most space. Listeners remember how a story starts and ends, not the middle.
 
-### CRITICAL CONSTRAINTS
-1. **LENGTH**: The reworked story MUST be 400-600 words (excluding coaching notes). This is a 2-3 minute spoken story, NOT a case study or essay. Be ruthless about cutting. Every sentence must earn its place.
-2. **TONE**: Write like a real person talking to an interviewer — conversational, confident, natural. NOT like a novel, essay, or AI. Read every sentence out loud. If it sounds like something you'd write on LinkedIn or in a consulting report but would never actually say to someone face-to-face, rewrite it simpler.
-3. **BANNED AI PATTERNS** — These are dead giveaways of AI writing. Do NOT use:
-   - Purple prose: "The air was thick with..." / "My stomach dropped" / "palpable" / "exhilarating"
-   - Dramatic novelisms: "I held my breath" / "a slow smile spread across his face"
-   - **THE "IT WASN'T JUST X" CONSTRUCTION IS ABSOLUTELY FORBIDDEN.** This includes ALL variations: "it wasn't just X", "it wasn't X, it was Y", "this wasn't merely", "I wasn't just", "this wasn't simply", "more than just". These contrast constructions are the #1 most recognizable AI writing pattern. NEVER use them. Instead of saying what something WASN'T, just describe what it WAS. If you catch yourself writing any form of "wasn't just" or "not just" or "more than just", delete the sentence and rewrite it completely.
-   - Corporate buzzwords in takeaways: "proactive relationship building", "strategic partnerships", "critical portfolio gaps", "significant long-term value", "directly attributable", "staying ahead of the curve", "complementary partners"
-   - Any phrase that sounds like a LinkedIn post or corporate memo
-4. **FLOW**: Tell it as one continuous narrative, the way you'd actually speak. Do NOT use numbered phases, sub-sections with bullet points, or case-study formatting. It should read like a transcript of someone talking, not a structured document.
-5. **NATURAL EMOTION**: Inner thoughts should sound like how people actually think — simple, direct. "Honestly, I was pissed" or "I remember thinking, we can't just let this go" — NOT "In that moment, a profound sense of determination washed over me."
-6. **DIALOGUE**: Keep dialogue short and natural. Real people don't speak in perfect paragraphs. A few key exchanges, 1-2 sentences each.
-7. **DO NOT EMBELLISH**: Use only facts and details present in the original story. Do not add dramatic flair, invent scenes, or create details that weren't there. Your job is to restructure and reframe what exists, not to fiction-write.
-8. **TAKEAWAYS & FUTURE PACING**:
-   - The takeaway MUST be derived from what actually happened in THIS story. Do not copy or paraphrase examples from this prompt. Ask yourself: what is the specific, unique lesson from THIS candidate's specific experience? What did THEY learn that they couldn't have learned from a textbook?
-   - BAD takeaway tone: "This experience highlighted the power of proactive relationship building and strategic partnerships, enabling me to rapidly fill portfolio gaps." (corporate memo)
-   - GOOD takeaway tone: conversational, specific to what happened, sounds like something you'd say to a friend. Short — 2-3 sentences max.
-   - For future pacing: name a specific, concrete situation in the target role (not a generic capability). Describe a real scenario they'd face on the job, not "I'm confident in my ability to drive initiatives forward."
+### 6. One Takeaway, Future Paced
+End with exactly ONE insight — not two, not three. Connect it to the target role using a `[role/company]` bracket that the candidate fills in per interview. The takeaway should feel like it naturally grew from the story, not a lesson bolted on at the end.
 
-### YOUR TASK
-Rework the candidate's story using the techniques above while strictly following the constraints. Keep the same core facts — transform HOW the story is told:
-- Add 1-2 brief inner-thought moments at pivotal points (keep them natural)
-- Replace the most important summaries with specific, immersive detail
-- Recreate 1-2 key conversations as short, natural dialogue
-- Build one clear emotion → resilience arc
-- Cut anything that doesn't directly serve the narrative
+Format: "At [**role/company**], I'd bring that same [specific approach]..."
 
-### OUTPUT FORMAT
-Output the reworked story as flowing prose with minimal formatting — just paragraphs and an occasional bold section header (Hook, Context, Action, Results). No bullet lists in the story body. Write it the way someone would actually say it out loud.
+### 7. Conversational, Not Presentational
+No check-in questions ("Does that make sense?"). No headers or labeled sections in the spoken version. No formal transitions ("Moving on to the results..."). It should read like natural speech with a clear thread, not a structured presentation.
 
-**IMPORTANT: Do NOT write any takeaway, lesson learned, future pacing, or closing reflection. End the story at the Results section. Stop after describing the outcomes. The takeaway will be written separately.**
+### 8. STAR Is a Guardrail, Not a Script
+The story should have a situation, actions, and results — but they don't need to be labeled or proportional. Some stories are 60% setup because the setup IS the story. Some are 60% action because the complexity is in what you did. Follow the natural shape of the experience.
+
+## Anti-Patterns — NEVER Do These
+
+### Fabrication (Most Important Rule)
+- **NEVER invent dialogue** that isn't in the story or a reasonable reconstruction
+- **NEVER fabricate characters** (e.g., giving names to unnamed people, inventing a "skeptical engineer" or "nervous manager")
+- **NEVER manufacture scenes** (e.g., "I walked into my manager's office," "I stayed late that night," "I remember sitting at my desk staring at the email")
+- **NEVER add physical reactions** ("my stomach dropped," "my gut clenched," "I just stared at it," "eyes glazing over," "a chill went down my spine")
+- **NEVER invent celebrations or emotional moments** ("high-fiving," "pop champagne," "her eyes lit up," "the room went silent")
+
+### AI Tells — Language Patterns That Sound Artificial
+- "It's not X, it's Y" constructions (e.g., "It wasn't a bug — it was a design flaw")
+- "It wasn't just X" / "not just" / "more than just" / any contrast construction — **ABSOLUTELY FORBIDDEN**
+- Excessive use of "honestly" or "frankly"
+- Em dash clusters (more than 2-3 per story)
+- "Armed with [data/insights/knowledge]"
+- "Game-changer"
+- "Hammered home"
+- "A thought sparked" / "A lightbulb went off"
+- "Rolled up my sleeves"
+- "Bulletproof"
+- "The outcome was incredible"
+- "This is where it gets interesting"
+- Labeling insights: "Aha moment," "The breakthrough," "The turning point"
+- Dramatic framing: "goldmine," "ticking time bomb," "powder keg"
+- Symmetrical structures (e.g., "It wasn't just about X. It was about Y.")
+- Purple prose: "The air was thick with..." / "palpable" / "exhilarating"
+- Dramatic novelisms: "I held my breath" / "a slow smile spread across his face"
+- Corporate buzzwords: "proactive relationship building", "strategic partnerships", "critical portfolio gaps", "significant long-term value", "staying ahead of the curve", "complementary partners"
+- Any phrase that sounds like a LinkedIn post or corporate memo
+
+### Structural Anti-Patterns
+- **Hook that spoils the result** — Don't open with the outcome ("I built a system that saved $120K"). Open with the situation or tension.
+- **Labeled sections** in the spoken version (Hook, Context, Action, Results, Takeaway, "The Breakthrough")
+- **Two or more takeaways** — Pick one. If you find yourself writing "And the other thing I learned..." you've gone too far.
+- **Restating the takeaway** — Say it once. Don't repeat it in different words.
+- **Over-explaining domain context** — The interviewer needs enough to follow the story, not a product brief. If you're spending more than 3-4 sentences on context, you're losing them.
+
+## Length Calibration
+
+- **Target: 350-500 words / 2-3 minutes spoken**
+- Under 350 words usually means you've compressed too much — the story lacks texture
+- Over 500 words usually means the middle is bloated or you're over-explaining context
+- Rule of thumb: if you read it aloud and it takes more than 3 minutes, cut the middle
+
+## Voice Notes
+
+- Use contractions naturally (I'd, we'd, didn't, wasn't)
+- Vary sentence length — mix short punchy sentences with longer ones
+- Use "So" and "And" to start sentences occasionally (natural speech)
+- Avoid formal transitions ("Furthermore," "Additionally," "In conclusion")
+- Numbers in speech: say "about a hundred thousand" not "$100,000.00"
+- When in doubt, read it aloud. If any sentence sounds like it belongs in a report, rewrite it.
+
+## YOUR TASK
+
+Rework the candidate's story using the principles above. Keep the same core facts — transform HOW the story is told. Follow the natural shape of the experience.
+
+## OUTPUT FORMAT
+
+Output the reworked story as flowing prose — just paragraphs, no headers, no labels, no bullet lists. Write it the way someone would actually say it out loud in an interview. One continuous narrative.
+
+**IMPORTANT: Do NOT write any takeaway, lesson learned, future pacing, or closing reflection. End the story after describing the outcomes. The takeaway will be written separately.**
 """
 
 
 REWORK_TAKEAWAY_PROMPT = """You are helping a job candidate write a short closing for their interview story.
 
 You will be given:
-1. The reworked story (Hook through Results — already written)
+1. The reworked story (already written)
 2. The original story (for factual reference)
 3. Optionally, a target role and company
 
-### YOUR TASK
+## YOUR TASK
 Write a **Takeaway** paragraph — 2-4 sentences MAX — that closes the story.
 
-### RULES
+## RULES
 1. **Be specific to THIS story.** What is the one concrete thing this person learned from THIS experience that they couldn't have learned from a textbook? Not a generic life lesson — something tied to what actually happened.
 2. **Sound like a real person.** Imagine the candidate is telling this story to a friend over a beer. How would they naturally close it? Use simple, direct language. Short sentences.
 3. **If a target role is provided, add one sentence of future pacing.** Future pacing = describe a SPECIFIC scenario they'd face in that role (not a vague capability claim). Paint a picture of them doing something concrete on that team.
+   Format: "At [**role/company**], I'd bring that same [specific approach]..."
 
-### ABSOLUTE BANS — Using ANY of these is a failure:
+## ABSOLUTE BANS — Using ANY of these is a failure:
 - "It wasn't just X" / "it wasn't X, it was Y" / "not just" / "more than just" / any contrast construction
 - "strategic partnerships" / "complementary partners" / "proactive relationship building"
 - "unlock opportunities" / "new avenues for growth" / "significant long-term value"
@@ -278,15 +320,15 @@ Write a **Takeaway** paragraph — 2-4 sentences MAX — that closes the story.
 - Any phrase that sounds like a LinkedIn post, corporate memo, or consulting deck
 - Any sentence longer than 25 words
 
-### GOOD EXAMPLES OF TONE (do NOT copy these — they're from different stories):
+## GOOD EXAMPLES OF TONE (do NOT copy these — they're from different stories):
 - "That whole thing taught me that the person closest to the data wins the argument, even if they're the most junior person in the room."
 - "I think about that a lot now — how one hard conversation saved us six months of building the wrong thing."
 
-### BAD EXAMPLES (do NOT write like this):
+## BAD EXAMPLES (do NOT write like this):
 - "This experience underscored the importance of building strategic partnerships and proactively identifying complementary solutions to drive long-term value."
 - "I learned that by cultivating genuine relationships and staying ahead of market trends, we can unlock new opportunities for growth."
 
-### OUTPUT FORMAT
+## OUTPUT FORMAT
 Output ONLY the takeaway paragraph. No headers, no labels, no preamble. Just the 2-4 sentences.
 """
 
