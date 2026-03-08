@@ -412,6 +412,15 @@ select.input option {
     background: rgba(248, 113, 113, 0.25);
 }
 
+.btn-force-stop {
+    background: rgba(248, 113, 113, 0.25);
+    border: 1px solid var(--danger);
+}
+.btn-force-stop:hover {
+    background: rgba(248, 113, 113, 0.4);
+    box-shadow: 0 2px 12px rgba(248, 113, 113, 0.2);
+}
+
 .btn-sm {
     padding: 0.35rem 0.65rem;
     font-size: 0.75rem;

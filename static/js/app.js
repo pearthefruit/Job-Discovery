@@ -203,6 +203,9 @@ const api = {
         if (runId) params.set('run_id', runId);
         return fetch(`/api/scraper/log?${params}`).then(r => r.json());
     },
+    async forceStopScraper() {
+        return fetch('/api/scraper/force-stop', { method: 'POST' }).then(r => r.json());
+    },
     async getJobDescription(jobId) {
         return fetch(`/api/jobs/${jobId}/description`).then(r => r.json());
     },
@@ -2248,8 +2251,10 @@ function renderScraperStatus(status) {
     if (status.running) {
         badge.className = 'badge badge-running';
         badge.textContent = 'Running';
-        btn.disabled = true;
-        btn.textContent = 'Running...';
+        btn.disabled = false;
+        btn.textContent = 'Force Stop';
+        btn.className = 'btn btn-danger btn-force-stop';
+        btn.onclick = handleForceStopScraper;
 
         const run = status.latest_run;
         if (run && run.total_sources > 0) {
@@ -2271,6 +2276,8 @@ function renderScraperStatus(status) {
         badge.textContent = 'Idle';
         btn.disabled = false;
         btn.textContent = 'Run Scraper';
+        btn.className = 'btn btn-primary';
+        btn.onclick = handleRunScraper;
         progressEl.style.display = 'none';
         stopPollingLogs();
 
@@ -2606,6 +2613,8 @@ async function handleRunScraper() {
             showToast(data.error, status === 409 ? 'warning' : 'error');
             btn.disabled = false;
             btn.textContent = 'Run Scraper';
+            btn.className = 'btn btn-primary';
+            btn.onclick = handleRunScraper;
         } else {
             // Capture run_id immediately so polling targets the correct run
             if (data.run_id) currentRunId = data.run_id;
@@ -2618,6 +2627,30 @@ async function handleRunScraper() {
         showToast('Failed to start scraper — is the server running?', 'error');
         btn.disabled = false;
         btn.textContent = 'Run Scraper';
+        btn.className = 'btn btn-primary';
+        btn.onclick = handleRunScraper;
+    }
+}
+
+async function handleForceStopScraper() {
+    const btn = document.getElementById('btn-run-scraper');
+    btn.disabled = true;
+    btn.textContent = 'Stopping...';
+    try {
+        await api.forceStopScraper();
+        showToast('Scraper stopped', 'success');
+        if (scraperPollingInterval) {
+            clearInterval(scraperPollingInterval);
+            scraperPollingInterval = null;
+        }
+        stopPollingLogs();
+        const status = await api.getScraperStatus();
+        renderScraperStatus(status);
+        refreshDiscovery();
+    } catch (e) {
+        showToast('Failed to stop scraper', 'error');
+        btn.disabled = false;
+        btn.textContent = 'Force Stop';
     }
 }
 

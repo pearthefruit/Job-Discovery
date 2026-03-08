@@ -456,6 +456,15 @@ class JobDiscoveryDB:
             ).fetchone()
             return row["cnt"] > 0
 
+    def force_stop_scraper(self):
+        with self.get_connection() as conn:
+            conn.execute(
+                """UPDATE scrape_runs SET status = 'failed',
+                   finished_at = CURRENT_TIMESTAMP,
+                   errors = 'Manually stopped'
+                   WHERE status = 'running'"""
+            )
+
     # --- Scrape Log ---
 
     def add_log(self, run_id, message, level="info"):

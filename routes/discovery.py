@@ -383,6 +383,12 @@ def scraper_status():
     return jsonify({"running": is_running, "latest_run": latest_run})
 
 
+@discovery_bp.route("/api/scraper/force-stop", methods=["POST"])
+def force_stop_scraper():
+    db.force_stop_scraper()
+    return jsonify({"message": "Scraper stopped"})
+
+
 @discovery_bp.route("/api/scraper/log", methods=["GET"])
 def scraper_log():
     # Accept explicit run_id to avoid race conditions with latest_run detection
